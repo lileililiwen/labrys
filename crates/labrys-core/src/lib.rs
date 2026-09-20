@@ -17,6 +17,7 @@ pub mod error;
 pub mod ids;
 pub mod inspector;
 pub mod manifest;
+pub mod observability;
 pub mod origin;
 pub mod repository;
 pub mod runtime;
@@ -62,6 +63,13 @@ pub use inspector::{
     Unknown, INSPECTION_ORDER,
 };
 pub use manifest::Manifest;
+pub use observability::{
+    AuditLog, AuditRecord, Correlation, EventAction, EventActor, EventDraft, EventLog,
+    EventResource, EventResult, EvidenceStore, FailureExplanation, HealthSnapshot, LogEntry,
+    LogSource, LogStore, PlatformEvent, RetentionPolicy, StageResult, UsageLedger, UsageRecord,
+    UsageTotals, VerificationEvidence, VerificationVerdict, Verifier, VerifierStage,
+    OBSERVABILITY_CONTRACT_VERSION, REDACTION_MARKER,
+};
 pub use origin::Origin;
 pub use repository::{ApplicationRepository, InMemoryApplicationRepository};
 pub use runtime::{

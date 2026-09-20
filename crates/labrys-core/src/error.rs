@@ -39,6 +39,10 @@ pub enum CoreError {
     Reconciliation(String),
     #[error("deployment violation: {0}")]
     Deployment(String),
+    #[error("verification violation: {0}")]
+    Verification(String),
+    #[error("audit integrity violation: {0}")]
+    AuditIntegrity(String),
     #[error("serialization error: {0}")]
     Serialization(String),
 }
