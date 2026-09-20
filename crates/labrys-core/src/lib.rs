@@ -19,9 +19,11 @@ pub mod inspector;
 pub mod manifest;
 pub mod observability;
 pub mod origin;
+pub mod plugin;
 pub mod repository;
 pub mod runtime;
 pub mod state;
+pub mod surfaces;
 pub mod workspace;
 
 pub use agent::{
@@ -65,12 +67,19 @@ pub use inspector::{
 pub use manifest::Manifest;
 pub use observability::{
     AuditLog, AuditRecord, Correlation, EventAction, EventActor, EventDraft, EventLog,
-    EventResource, EventResult, EvidenceStore, FailureExplanation, HealthSnapshot, LogEntry,
-    LogSource, LogStore, PlatformEvent, RetentionPolicy, StageResult, UsageLedger, UsageRecord,
-    UsageTotals, VerificationEvidence, VerificationVerdict, Verifier, VerifierStage,
-    OBSERVABILITY_CONTRACT_VERSION, REDACTION_MARKER,
+    EventResource, EventResult, EvidenceStore, FailureExplanation, Finding, HealthSnapshot,
+    LogEntry, LogSource, LogStore, PlatformEvent, RetentionPolicy, Severity, StageResult,
+    UsageLedger, UsageRecord, UsageTotals, VerificationEvidence, VerificationVerdict, Verifier,
+    VerifierStage, OBSERVABILITY_CONTRACT_VERSION, REDACTION_MARKER,
 };
 pub use origin::Origin;
+pub use plugin::{
+    decode_response, encode_response, register_sdk_examples, sdk_examples, ExampleAgentPlugin,
+    ExampleBindingProviderPlugin, ExampleCapabilityProviderPlugin, ExampleDeployPlugin,
+    ExampleInspectorPlugin, ExampleRuntimePlugin, Handshake, Plugin, PluginFamily, PluginManifest,
+    PluginProcess, PluginRegistry, PluginReport, PluginState, RpcError, RpcErrorCode, RpcRequest,
+    RpcResponse, PLUGIN_PROTOCOL_VERSION,
+};
 pub use repository::{ApplicationRepository, InMemoryApplicationRepository};
 pub use runtime::{
     detect_runtime, enforce_run_usage, evaluate_health, prepare, simulate_build, BuildResult,
@@ -79,6 +88,12 @@ pub use runtime::{
     RuntimeKind, RuntimeProfile, RustAdapter, SandboxLimits, SupportTier,
 };
 pub use state::{DesiredState, ObservedState, ObservedStatus};
+pub use surfaces::{
+    attach_secret_rows, authorize_dashboard_write, render_dashboard, Attribution, Cli, CliActor,
+    CliCommand, CliRequest, CliResponse, DashboardEntry, DashboardSection, DashboardView,
+    PlatformState, SecretRow,
+};
+
 pub use workspace::{
     CanonicalRepository, ExpoShare, ExpoShareStatus, ExpoTransport, Feedback, MergeRequest,
     PreviewAccess, PreviewStatus, RollbackInfo, SessionWorkspace, WebPreview, WorkspaceDiff,

@@ -31,6 +31,81 @@ pub const OBSERVABILITY_CONTRACT_VERSION: u32 = 1;
 pub const REDACTION_MARKER: &str = "[redacted]";
 
 // ---------------------------------------------------------------------------
+// Structured findings
+// ---------------------------------------------------------------------------
+
+/// How severe a finding is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Severity {
+    Info,
+    Warning,
+    Error,
+}
+
+/// One structured finding returned by the CLI, `doctor`, and the dashboard.
+/// Failures always carry actionable recovery information.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Finding {
+    pub code: String,
+    pub severity: Severity,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource: Option<EventResource>,
+}
+
+impl Finding {
+    pub fn new(code: impl Into<String>, severity: Severity, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            severity,
+            message: message.into(),
+            recovery: None,
+            resource: None,
+        }
+    }
+
+    pub fn info(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(code, Severity::Info, message)
+    }
+
+    pub fn warning(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(code, Severity::Warning, message)
+    }
+
+    pub fn error(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(code, Severity::Error, message)
+    }
+
+    pub fn with_recovery(mut self, recovery: impl Into<String>) -> Self {
+        self.recovery = Some(recovery.into());
+        self
+    }
+
+    pub fn on_resource(mut self, resource: EventResource) -> Self {
+        self.resource = Some(resource);
+        self
+    }
+
+    /// Machine-readable form for CLI JSON envelopes.
+    pub fn to_json_value(&self) -> serde_json::Value {
+        serde_json::json!({
+            "code": self.code,
+            "severity": format!("{:?}", self.severity).to_ascii_lowercase(),
+            "message": self.message,
+            "recovery": self.recovery,
+            "resource": self.resource.as_ref().map(|r| serde_json::json!({
+                "kind": r.kind,
+                "id": r.id,
+            })),
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Correlation and attribution
 // ---------------------------------------------------------------------------
 

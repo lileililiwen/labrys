@@ -43,6 +43,12 @@ pub enum CoreError {
     Verification(String),
     #[error("audit integrity violation: {0}")]
     AuditIntegrity(String),
+    #[error("plugin protocol violation: {0}")]
+    Plugin(String),
+    #[error("plugin unavailable: {0}")]
+    PluginUnavailable(String),
+    #[error("surface permission denied: {0}")]
+    PermissionDenied(String),
     #[error("serialization error: {0}")]
     Serialization(String),
 }
