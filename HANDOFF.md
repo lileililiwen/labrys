@@ -27,6 +27,9 @@ ARCHIVED as
 and `cli-dashboard-and-plugin-sdk` is implemented, locally verified, and
 ARCHIVED as
 `openspec/changes/archive/2026-09-20-cli-dashboard-and-plugin-sdk`,
+and `control-plane-persistence-and-worker` is implemented, locally verified,
+and ARCHIVED as
+`openspec/changes/archive/2026-09-20-control-plane-persistence-and-worker`,
 with canonical
 specs promoted to `openspec/specs/application-model/spec.md`,
 `openspec/specs/project-inspector/spec.md` (3 requirements),
@@ -36,8 +39,10 @@ specs promoted to `openspec/specs/application-model/spec.md`,
 `openspec/specs/capability-platform/spec.md` (4 requirements),
 `openspec/specs/reconciliation/spec.md` (3 requirements),
 `openspec/specs/deployment-platform/spec.md` (3 requirements),
-`openspec/specs/verification-and-observability/spec.md` (3 requirements), and
-`openspec/specs/platform-surfaces/spec.md` (3 requirements).
+`openspec/specs/verification-and-observability/spec.md` (3 requirements),
+`openspec/specs/platform-surfaces/spec.md` (3 requirements),
+`openspec/specs/control-plane-persistence/spec.md` (3 requirements), and
+`openspec/specs/reconciliation-worker/spec.md` (3 requirements).
 The `labrys-core` crate now holds a deterministic `Inspector`
 (`crates/labrys-core/src/inspector.rs`): `INSPECTION_ORDER` (dockerfile →
 compose → manifest → framework_convention → configuration → ci → source,
@@ -177,33 +182,58 @@ read/write boundaries (secrets, logs, and code changes read-only; deployments,
 capabilities, resources, and settings approval-gated; agents barred) with
 `render_dashboard` keeping agent and platform attribution separate so
 production health is computed only from platform evidence and secrets render
-as references only.
-156 tests pass (10 foundation + 9 inspector-adoption + 10 agent-protocol in
-`crates/labrys-core/tests/agent_protocol.rs` + 13 runtime-sandbox in
-`crates/labrys-core/tests/runtime_sandbox.rs` + 15 workspace-preview in
-`crates/labrys-core/tests/workspace_preview.rs` + 22 capability-secrets in
-`crates/labrys-core/tests/capability_secrets.rs` + 19 reconciliation-
-controllers in `crates/labrys-core/tests/reconciliation_controllers.rs` + 17
-deployment-rollback in `crates/labrys-core/tests/deployment_rollback.rs` + 17
-observability-verification in
-`crates/labrys-core/tests/observability_verification.rs` + 24 platform-surfaces
-in `crates/labrys-core/tests/platform_surfaces.rs`). No CI, deployment,
-or production evidence exists yet. The ROADMAP implementation queue is now
-exhausted: every change through Phase 4 is archived and the crate holds
-contracts and deterministic models only, not a claim of delivered product
-behavior. The pre-existing local Gate
-blocker is FIXED: `.ai-gate/gate.yaml` no longer carries the rejected `notes`
-field or `BLOCKED` blocking entry, declares `commands` for all 8 checks, and
-`driftwatchdog gate` now reports PASS.
+as references only. A new `labrys-control-plane` crate
+(`crates/labrys-control-plane/`) turns those contracts into a durable,
+executable control plane without making the pure core depend on I/O: versioned
+PostgreSQL migrations (`migrations/`) for the application aggregate,
+environment-scoped desired/observed state, resource/deployment/capability
+lifecycle, events, logs, a hash-chained append-only audit trail, evidence,
+usage, and jobs; `PgApplicationStore` with transactional, optimistic
+generation-checked desired-state writes that commit with their attributable
+event and audit record and separate observed-state writes so a failed
+observation never rewrites desired state and a preview/development write can
+never touch production; redacting `PgEventStore`/`PgLogStore`/`PgAuditLog`/
+`PgEvidenceStore`/`PgUsageLedger` that reject plaintext secrets before SQL and
+assign audit sequence/chain under a transaction advisory lock; a durable
+`PgJobQueue` claiming with a lease and `FOR UPDATE SKIP LOCKED`, globally unique
+idempotency, persisted exponential backoff, pause/resume, dead-letter, requeue,
+and expired-lease recovery; and a `Worker` that dispatches through an injected
+`JobDispatcher` trait (no Docker/registry/TLS is introduced), promotes readiness
+only from platform probes, redacts its failure diagnostics, and drains
+in-flight work on graceful shutdown; plus a `control-plane` executable that
+loads credentials from process configuration, runs migrations, and starts
+bounded workers. 187 tests pass (156 pure-core + 31 control-plane: 8 config in
+`crates/labrys-control-plane/tests/config.rs`, 6 redaction in
+`crates/labrys-control-plane/tests/redaction.rs`, and 17 PostgreSQL integration
+in `crates/labrys-control-plane/tests/control_plane.rs` covering restart
+durability, stale-generation conflict, environment isolation, transactional
+event rollback, redacted credential-bearing provider failure, concurrent
+audit-chain integrity, two-worker single claim, duplicate idempotency,
+lease-expiry recovery, agent-claim-never-ready, retry→dead-letter→requeue,
+pause/resume, graceful shutdown, evidence retention, usage totals, and an
+executable migration+recovery smoke). Container execution, image registries,
+domains/TLS, the public HTTP API, the CLI binary, and the dashboard remain
+later changes. No CI, deployment, or production evidence exists yet. The
+Phase 5–7 queue (5 changes) is authored and planning-only; the crate now holds
+durable persistence and a recoverable worker but still no container execution or
+product entry points. The gate declaration is structurally valid and declares
+commands for all 8 checks, and a fresh `driftwatchdog gate` run now PASSES all
+8 (the earlier security-adapter block is resolved: `cargo audit` exits 0). The
+only audit exception is a documented, scoped ignore of RUSTSEC-2023-0071
+(`.cargo/audit.toml`) for `rsa`, which is a non-compiled optional transitive
+dependency of sqlx's never-activated MySQL driver (`cargo tree -i rsa` is empty;
+the binary links only `sqlx-postgres`).
 
-## Next change
+## Current spec
 
-No active changes remain: the ROADMAP queue through Phase 4 is implemented,
-locally verified, and archived, so the `current_spec` pointer has been removed
-per the handoff lifecycle. `openspec list` reports "No active changes found."
-The next step is a new OpenSpec change (or a ROADMAP revision) — the delegated
-implementation queue is exhausted. Do not reintroduce a pointer until
-`openspec list` shows an active change.
+`current_spec: container-execution-and-preview-runtime`
+
+The package is newly authored and remains planning-only. It has not been
+implemented, verified, or archived. It is the next Phase 5 change in `ROADMAP.md`
+order and turns the runtime and preview contracts into bounded Docker execution,
+isolated workspaces, health-gated previews, logs, and cleanup on top of the now
+durable control plane. The Phase 0–4 queue plus `control-plane-persistence-and-
+worker` remain implemented, locally verified, and archived.
 
 ## Verification evidence
 
@@ -213,34 +243,42 @@ implementation queue is exhausted. Do not reintroduce a pointer until
   with specs promoted (`platform-surfaces: create`, +3); canonical spec at
   `openspec/specs/platform-surfaces/spec.md` (3 requirements).
 - `node scripts/check-openspec-change-names.mjs` — PASS; all active names are valid.
-- `openspec list` — PASS; no active changes (all 10 ROADMAP changes archived).
-- `openspec validate --all --strict` — PASS; 10 items passed, 0 failed
-  (10 promoted specs: `spec/agent-platform`, `spec/application-model`,
-  `spec/capability-platform`, `spec/deployment-platform`,
-  `spec/platform-surfaces`, `spec/preview-platform`,
-  `spec/project-inspector`, `spec/reconciliation`, `spec/runtime-platform`,
-  `spec/verification-and-observability`).
+- `openspec list` — PASS; 5 active Phase 5–7 changes remain (this change archived).
+- `openspec validate --all --strict` — PASS; 17 items passed, 0 failed (12
+  promoted specs including the new `spec/control-plane-persistence` and
+  `spec/reconciliation-worker`, plus the 5 active Phase 5–7 changes).
 - `git diff --check` — PASS; no whitespace errors reported.
-- `cargo build --workspace` — PASS; `cargo test --workspace` — PASS (156/156:
-  10/10 in `crates/labrys-core/tests/application_foundation.rs`, 9/9 in
-  `crates/labrys-core/tests/inspector_adoption.rs`, 10/10 in
-  `crates/labrys-core/tests/agent_protocol.rs`, 13/13 in
-  `crates/labrys-core/tests/runtime_sandbox.rs`, 15/15 in
-  `crates/labrys-core/tests/workspace_preview.rs`, 22/22 in
-  `crates/labrys-core/tests/capability_secrets.rs`, 19/19 in
-  `crates/labrys-core/tests/reconciliation_controllers.rs`, 17/17 in
-  `crates/labrys-core/tests/deployment_rollback.rs`, 17/17 in
-  `crates/labrys-core/tests/observability_verification.rs`, 24/24 in
-  `crates/labrys-core/tests/platform_surfaces.rs`).
+- `cargo build --workspace` — PASS; `cargo test --workspace` — PASS (187/187:
+  the 156 pure-core tests unchanged plus 31 control-plane tests — 8/8 in
+  `crates/labrys-control-plane/tests/config.rs`, 6/6 in
+  `crates/labrys-control-plane/tests/redaction.rs`, and 17/17 in
+  `crates/labrys-control-plane/tests/control_plane.rs` against an isolated
+  PostgreSQL 16 instance).
+- PostgreSQL integration evidence: the control-plane tests require
+  `LABRYS_DATABASE_URL`/`DATABASE_URL`; when unset they skip and only the pure
+  unit/core tests run. They were run against a throwaway `postgres:16-alpine`
+  container; this is infrastructure evidence, not production-deployment evidence.
+- Executable smoke: `cargo run --bin control-plane` connects, applies migrations,
+  starts bounded workers, and drains to a clean stop on SIGTERM.
 - `cargo fmt --all --check` — PASS; `cargo clippy --workspace --all-targets -- -D warnings` — PASS.
-- `cargo audit` — PASS; no vulnerabilities reported.
+- `cargo audit` — PASS (exit 0) with one documented, scoped ignore of
+  RUSTSEC-2023-0071 in `.cargo/audit.toml` for the non-compiled `rsa`
+  transitive dependency of sqlx's inactive MySQL driver.
 - Local Gate (`driftwatchdog gate` in repo root) — PASS (8/8 checks:
   build, format, lint, openspec_change_names, openspec_strict_validation,
-  repository_integrity, security, tests).
-- Prior history: foundation archived with one non-blocking proposal warning
-  (missing Why/What Changes headers); runtime archived with the same
-  non-blocking proposal warning. Gate `notes`/`BLOCKED` schema fix and
-  `driftwatchdog init` recorded in the previous handoff revision.
+  repository_integrity, security, tests); the earlier security-adapter block is
+  resolved.
+- `control-plane-persistence-and-worker` tasks.md — 17/17 checked from
+  implementation and integration evidence.
+- `openspec/changes/archive/2026-09-20-control-plane-persistence-and-worker` —
+  archived with specs promoted (`control-plane-persistence: create`, +3;
+  `reconciliation-worker: create`, +3).
+- Deferred to later changes and NOT introduced here: container execution, image
+  registries, DNS/TLS issuance, external provider implementations, the public
+  HTTP API, the `labrys` CLI binary, and the operator dashboard.
+- Prior history: foundation/runtime archived with one non-blocking proposal
+  warning (missing Why/What Changes headers). Gate `notes`/`BLOCKED` schema fix
+  and `driftwatchdog init` recorded in an earlier handoff revision.
 
 ## Handoff lifecycle
 
