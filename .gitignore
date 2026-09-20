@@ -16,3 +16,8 @@
 *.iml
 /.labrys/
 /tmp/
+
+# Agent and tooling local state
+/.ariadex/
+/.codegraph/
+/.driftwatch/

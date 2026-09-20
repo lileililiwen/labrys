@@ -5,4 +5,12 @@ checkers = []
 [storage]
 
 [fingerprint]
-ignore = []
+ignore = [
+  ".ariadex/",
+  ".codegraph/",
+  ".driftwatch/",
+  "target/",
+  "node_modules/",
+  "*.db",
+  "*.log",
+]

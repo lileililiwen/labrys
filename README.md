@@ -11,9 +11,24 @@ previews, deployments, secrets, health, logs, verification, and rollback.
 
 ## Status
 
-This repository is in governance and specification bootstrap. The OpenSpec
-queue is a delegated implementation handoff; no runtime, build, integration,
-deployment, or production capability has been implemented or verified yet.
+The OpenSpec implementation queue through Phase 4 is complete: all ten changes
+are archived and their capability specs promoted under `openspec/specs/`.
+`crates/labrys-core` holds the deterministic control-plane model — Application
+and desired state, inspector and adoption, agent protocol and policy, runtime
+and sandbox, workspace and preview, capabilities/providers/bindings and sealed
+secrets, controllers with idempotent jobs and resource lifecycle, OCI
+deployment with health-gated promotion and explicit rollback boundaries,
+structured observability with an immutable audit chain and independent
+verification, and the CLI/dashboard/plugin-surface contracts.
+
+This is contract and model delivery verified by 156 unit tests and the local
+Gate. It is **not** runtime delivery: no CI, deployment, or production evidence
+exists yet, and the real infrastructure boundaries (SQLx persistence, container
+execution, registry pushes, TLS issuance, the Rust job worker, the CLI binary,
+and the dashboard app) are still to be built on top of these plans.
+
+`openspec list` currently reports no active changes; the next step is a new
+OpenSpec change or a roadmap revision.
 
 ## Product model
 
@@ -49,10 +64,24 @@ file storage, web preview, web deployment, logs, health, and rollback.
 
 ## Development
 
-The repository currently contains specifications and governance only. Select a
-single active change with `openspec list`, follow `HANDOFF.md`, and implement
-only the selected change plus its tests. Use the local workflow in
-`.ai-rules/workflow.md`; completion rules are in `.ai-rules/completion.md`.
+`crates/labrys-core` is a pure, deterministic Rust crate: no I/O, no clocks
+beyond injected timestamps, and canonical JSON on every persisted shape.
+
+```bash
+cargo build --workspace
+cargo test --workspace
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+node scripts/check-openspec-change-names.mjs
+openspec validate --all --strict
+driftwatchdog gate
+```
+
+To continue work, create an OpenSpec change (proposal, design, tasks,
+scenario-based specs), set exactly one `current_spec:` pointer at the top of
+`HANDOFF.md`, and implement only that change. The full lifecycle is in
+`.ai-rules/workflow.md`; stopping conditions are in `.ai-rules/completion.md`;
+module and boundary rules are in `.ai-rules/architecture.md`.
 
 ## Scope boundary
 

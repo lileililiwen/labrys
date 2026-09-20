@@ -1,7 +1,9 @@
 # Labrys agent entry point
 
-Labrys is an agent-native, technology-agnostic Application PaaS. The active
-implementation queue is in OpenSpec and is ordered by `ROADMAP.md`.
+Labrys is an agent-native, technology-agnostic Application PaaS. The
+implementation queue lives in OpenSpec and is ordered by `ROADMAP.md`. All ten
+ROADMAP changes are archived; `openspec list` reports no active changes, so
+resuming work means authoring a new change (or revising the roadmap).
 
 Required workflow:
 
@@ -13,7 +15,8 @@ openspec list → select one change → BFS impact map → structural pass
 → update HANDOFF.md → commit 2 (handoff pointer only)
 ```
 
-- Read `HANDOFF.md` before work and maintain exactly one `current_spec` pointer.
+- Read `HANDOFF.md` before work and maintain exactly one `current_spec` pointer
+  while an active change exists; remove the pointer when none do.
 - Each spec change ends with exactly two commits: commit 1 holds the
   implementation, tests, archived change, and promoted specs; commit 2 is the
   separate `HANDOFF.md` pointer update to the next change. Stop after commit 2.

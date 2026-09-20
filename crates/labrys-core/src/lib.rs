@@ -1,11 +1,36 @@
-//! Labrys control-plane foundation.
+//! Labrys control-plane contracts.
 //!
-//! Canonical [`Application`] model shared by generated and imported projects.
-//! Covers requirement `application-model`: one model for all origins,
-//! environment-isolated operational state, and optional portable manifests.
+//! Pure, deterministic models for the platform's capability specs, one module
+//! per promoted spec:
+//!
+//! - [`application`], [`state`], [`environment`], [`manifest`], [`origin`],
+//!   [`repository`]: `application-model` — one canonical Application for every
+//!   origin, environment isolation, and separately persisted desired and
+//!   observed state.
+//! - [`inspector`]: `project-inspector` — deterministic understanding,
+//!   evidence/conflict handling, and approval-gated adoption plans.
+//! - [`agent`]: `agent-platform` — versioned backend protocol, normalized
+//!   events, session policy, approvals, and secret references.
+//! - [`runtime`]: `runtime-platform` — adapter detection, dev/production
+//!   profiles, OCI boundaries, and sandbox limits.
+//! - [`workspace`]: `preview-platform` — per-session worktrees, diffs, merges,
+//!   health-gated previews, Expo shares, and feedback.
+//! - [`capability`]: `capability-platform` — capabilities, providers,
+//!   bindings, modes, and sealed secrets.
+//! - [`controller`]: `reconciliation` — controllers, idempotent jobs, resource
+//!   lifecycle, and platform-only health aggregation.
+//! - [`deployment`]: `deployment-platform` — first-class OCI deployments,
+//!   health-gated promotion, domains, and explicit rollback boundaries.
+//! - [`observability`]: `verification-and-observability` — attributable events,
+//!   separated logs, immutable audit chain, usage, and independent
+//!   verification.
+//! - [`surfaces`], [`plugin`]: `platform-surfaces` — CLI and dashboard
+//!   boundaries and the versioned JSON-RPC plugin protocol with SDK examples.
 //!
 //! The platform database is authoritative for imported projects; `labrys.yaml`
-//! is an optional export/import manifest (see [`Manifest`]).
+//! is an optional export/import manifest (see [`Manifest`]). Every module is
+//! I/O-free: real persistence, containers, registries, and workers are
+//! infrastructure built on these plans.
 
 pub mod agent;
 pub mod application;

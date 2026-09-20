@@ -2,7 +2,7 @@
 name = "labrys-core"
 version = "0.1.0"
 edition = "2021"
-description = "Labrys control-plane foundation: canonical Application model, environments, desired state, and portable manifests"
+description = "Labrys control-plane contracts: Application model and desired state, inspector and adoption, agent protocol and policy, runtime and sandbox, workspace and preview, capabilities and secrets, controllers and reconciliation, deployment and rollback, observability and verification, and platform surfaces"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
