@@ -1,0 +1,13 @@
+# cargo-audit configuration for the Labrys workspace.
+#
+# RUSTSEC-2023-0071 (rsa / Marvin timing side-channel) is reported only because
+# Cargo.lock records sqlx's optional `sqlx-mysql` driver, which depends on `rsa`.
+# This project uses the `postgres` feature exclusively, so `sqlx-mysql` (and
+# therefore `rsa`) is never activated or compiled: `cargo tree -i rsa` reports no
+# dependents and the control-plane binary links only `sqlx-postgres`. This is a
+# lockfile-metadata false positive for a non-compiled optional transitive
+# dependency, not a runtime exposure. Revisit if a MySQL driver is ever enabled.
+[advisories]
+ignore = [
+    "RUSTSEC-2023-0071",
+]
