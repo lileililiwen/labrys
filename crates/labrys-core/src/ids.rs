@@ -364,3 +364,83 @@ impl FromStr for JobId {
             .map_err(|_| format!("invalid job id: {s}"))
     }
 }
+
+/// Stable identifier for a [`crate::deployment::Deployment`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DeploymentId(Uuid);
+
+impl DeploymentId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl Default for DeploymentId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for DeploymentId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "dep_{}", self.0.simple())
+    }
+}
+
+impl FromStr for DeploymentId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let hex = s
+            .strip_prefix("dep_")
+            .ok_or_else(|| format!("invalid deployment id: {s}"))?;
+        Uuid::parse_str(hex)
+            .map(Self)
+            .map_err(|_| format!("invalid deployment id: {s}"))
+    }
+}
+
+/// Stable identifier for a [`crate::deployment::Domain`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DomainId(Uuid);
+
+impl DomainId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl Default for DomainId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for DomainId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "dom_{}", self.0.simple())
+    }
+}
+
+impl FromStr for DomainId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let hex = s
+            .strip_prefix("dom_")
+            .ok_or_else(|| format!("invalid domain id: {s}"))?;
+        Uuid::parse_str(hex)
+            .map(Self)
+            .map_err(|_| format!("invalid domain id: {s}"))
+    }
+}

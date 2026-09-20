@@ -37,6 +37,8 @@ pub enum CoreError {
     SecretNotFound(String),
     #[error("reconciliation violation: {0}")]
     Reconciliation(String),
+    #[error("deployment violation: {0}")]
+    Deployment(String),
     #[error("serialization error: {0}")]
     Serialization(String),
 }

@@ -11,6 +11,7 @@ pub mod agent;
 pub mod application;
 pub mod capability;
 pub mod controller;
+pub mod deployment;
 pub mod environment;
 pub mod error;
 pub mod ids;
@@ -43,11 +44,17 @@ pub use controller::{
     ObservationSource, PreviewController, Reconciliation, Resource, ResourceController,
     ResourcePhase, ResourceTransition, RetryPolicy, RECONCILIATION_CONTRACT_VERSION,
 };
+pub use deployment::{
+    attach_domain, build_image, execute_rollback, plan_rollback, select_rollback_target,
+    Deployment, DeploymentLog, DeploymentPhase, DeploymentTransition, Domain, Image, ImageSource,
+    LogLevel, Revision, RollbackKind, RollbackOutcome, RollbackPlan, Rollout,
+    CONFIGURATION_DATA_WARNING, DATABASE_DATA_WARNING, DEPLOYMENT_CONTRACT_VERSION,
+};
 pub use environment::{Environment, EnvironmentKind};
 pub use error::{CoreError, Result};
 pub use ids::{
-    AgentSessionId, ApplicationId, BindingId, EnvironmentId, FeedbackId, JobId, PreviewId,
-    ResourceId, WorkspaceId,
+    AgentSessionId, ApplicationId, BindingId, DeploymentId, DomainId, EnvironmentId, FeedbackId,
+    JobId, PreviewId, ResourceId, WorkspaceId,
 };
 pub use inspector::{
     AdoptionItem, AdoptionItemKind, AdoptionPlan, ApplicationProfile, BroadChangeGate, ChangeStep,
