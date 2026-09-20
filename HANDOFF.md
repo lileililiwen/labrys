@@ -1,4 +1,4 @@
-current_spec: observability-and-verification
+current_spec: cli-dashboard-and-plugin-sdk
 
 # Labrys handoff
 
@@ -23,6 +23,9 @@ ARCHIVED as
 and `deployment-and-rollback` is implemented, locally verified, and ARCHIVED
 as
 `openspec/changes/archive/2026-09-20-deployment-and-rollback`,
+and `observability-and-verification` is implemented, locally verified, and
+ARCHIVED as
+`openspec/changes/archive/2026-09-20-observability-and-verification`,
 with canonical
 specs promoted to `openspec/specs/application-model/spec.md`,
 `openspec/specs/project-inspector/spec.md` (3 requirements),
@@ -30,8 +33,9 @@ specs promoted to `openspec/specs/application-model/spec.md`,
 `openspec/specs/runtime-platform/spec.md` (3 requirements),
 `openspec/specs/preview-platform/spec.md` (3 requirements),
 `openspec/specs/capability-platform/spec.md` (4 requirements),
-`openspec/specs/reconciliation/spec.md` (3 requirements), and
-`openspec/specs/deployment-platform/spec.md` (3 requirements).
+`openspec/specs/reconciliation/spec.md` (3 requirements),
+`openspec/specs/deployment-platform/spec.md` (3 requirements), and
+`openspec/specs/verification-and-observability/spec.md` (3 requirements).
 The `labrys-core` crate now holds a deterministic `Inspector`
 (`crates/labrys-core/src/inspector.rs`): `INSPECTION_ORDER` (dockerfile →
 compose → manifest → framework_convention → configuration → ci → source,
@@ -131,14 +135,35 @@ database restoration) plus a migration-in-delta escalation, requires a
 granted named `ExplicitApproval`, and re-points domains and current traffic;
 `select_rollback_target` refusing unbuilt or failed revisions; and
 `attach_domain` approval-gating domain changes so traffic can never route to
-an unpromoted deployment.
-115 tests pass (10 foundation + 9 inspector-adoption + 10 agent-protocol in
+an unpromoted deployment; plus a deterministic observability and verification
+model (`crates/labrys-core/src/observability.rs`): `PlatformEvent`/`EventDraft`
+attributing every action to an `EventActor` (agent session, platform, human,
+provider) with `Correlation` trace/session/application/environment ids,
+`EventAction` vocabulary, `EventResource`, before/after state, and
+`EventResult`, appended through `EventLog` with redaction of all free-text
+fields and per-application/environment/session/trace queries; `LogStore`
+keeping agent, build, runtime, deployment, capability, and resource streams
+separated with redacted messages; `HealthSnapshot` with a ttl whose
+`effective_state` falls back to `Unknown` once stale; `UsageLedger`/
+`UsageTotals` per-application metering; an append-only hash-chained `AuditLog`
+(`AuditRecord::compute_hash`, `restore`, `verify`) that detects tampering,
+chain breaks, and sequence gaps; and a `Verifier` recording the agent claim as
+non-authoritative while evaluating `VerifierStage` deterministic, build/test,
+health, schema, browser, advisory, and human results — later passes cannot
+erase a stored failure (kept as a disagreement), advisory never blocks,
+applicable stages without evidence yield `VerificationVerdict::Incomplete`,
+`failures()` expose redacted `FailureExplanation`s naming the resource and
+recovery path, and `EvidenceStore`/`RetentionPolicy` prune aged evidence while
+always retaining unresolved blocking failures.
+132 tests pass (10 foundation + 9 inspector-adoption + 10 agent-protocol in
 `crates/labrys-core/tests/agent_protocol.rs` + 13 runtime-sandbox in
 `crates/labrys-core/tests/runtime_sandbox.rs` + 15 workspace-preview in
 `crates/labrys-core/tests/workspace_preview.rs` + 22 capability-secrets in
 `crates/labrys-core/tests/capability_secrets.rs` + 19 reconciliation-
 controllers in `crates/labrys-core/tests/reconciliation_controllers.rs` + 17
-deployment-rollback in `crates/labrys-core/tests/deployment_rollback.rs`). No CI, deployment,
+deployment-rollback in `crates/labrys-core/tests/deployment_rollback.rs` + 17
+observability-verification in
+`crates/labrys-core/tests/observability_verification.rs`). No CI, deployment,
 or production evidence exists yet. The active queue remains a delegated
 implementation handoff, not a claim of delivered product behavior. The pre-existing local Gate
 blocker is FIXED: `.ai-gate/gate.yaml` no longer carries the rejected `notes`
@@ -147,27 +172,31 @@ field or `BLOCKED` blocking entry, declares `commands` for all 8 checks, and
 
 ## Next change
 
-Implement only `observability-and-verification` (ROADMAP Phase 3, item 9)
-after reviewing its proposal, design, tasks, and capability scenarios.
+Implement only `cli-dashboard-and-plugin-sdk` (ROADMAP Phase 4, item 10)
+after reviewing its proposal, design, tasks, and capability scenarios. It is
+the last active change; when it is archived and no active changes remain,
+remove the `current_spec` pointer instead of advancing it.
 Keep the pointer above in sync with `openspec list`; never use `none` or `TBD`.
 
 ## Verification evidence
 
-- `deployment-and-rollback` tasks.md — 5/5 checked from implementation evidence.
-- `openspec/changes/archive/2026-09-20-deployment-and-rollback` — archived with
-  specs promoted (`deployment-platform: create`, +3); canonical spec at
-  `openspec/specs/deployment-platform/spec.md` (3 requirements).
+- `observability-and-verification` tasks.md — 5/5 checked from implementation
+  evidence.
+- `openspec/changes/archive/2026-09-20-observability-and-verification` —
+  archived with specs promoted (`verification-and-observability: create`, +3);
+  canonical spec at
+  `openspec/specs/verification-and-observability/spec.md` (3 requirements).
 - `node scripts/check-openspec-change-names.mjs` — PASS; all active names are valid.
-- `openspec list` — PASS; 2 active changes (foundation + inspector + agent +
-  runtime + workspace + capability + controllers + deployment archived, next
-  is `observability-and-verification` at 0/5).
+- `openspec list` — PASS; 1 active change (foundation + inspector + agent +
+  runtime + workspace + capability + controllers + deployment + observability
+  archived, next is `cli-dashboard-and-plugin-sdk` at 0/5).
 - `openspec validate --all --strict` — PASS; 10 items passed, 0 failed
-  (2 active changes + promoted `spec/agent-platform` + `spec/application-model`
+  (1 active change + promoted `spec/agent-platform` + `spec/application-model`
   + `spec/capability-platform` + `spec/deployment-platform` +
   `spec/preview-platform` + `spec/project-inspector` + `spec/reconciliation` +
-  `spec/runtime-platform`).
+  `spec/runtime-platform` + `spec/verification-and-observability`).
 - `git diff --check` — PASS; no whitespace errors reported.
-- `cargo build --workspace` — PASS; `cargo test --workspace` — PASS (115/115:
+- `cargo build --workspace` — PASS; `cargo test --workspace` — PASS (132/132:
   10/10 in `crates/labrys-core/tests/application_foundation.rs`, 9/9 in
   `crates/labrys-core/tests/inspector_adoption.rs`, 10/10 in
   `crates/labrys-core/tests/agent_protocol.rs`, 13/13 in
@@ -175,7 +204,8 @@ Keep the pointer above in sync with `openspec list`; never use `none` or `TBD`.
   `crates/labrys-core/tests/workspace_preview.rs`, 22/22 in
   `crates/labrys-core/tests/capability_secrets.rs`, 19/19 in
   `crates/labrys-core/tests/reconciliation_controllers.rs`, 17/17 in
-  `crates/labrys-core/tests/deployment_rollback.rs`).
+  `crates/labrys-core/tests/deployment_rollback.rs`, 17/17 in
+  `crates/labrys-core/tests/observability_verification.rs`).
 - `cargo fmt --all --check` — PASS; `cargo clippy --workspace --all-targets -- -D warnings` — PASS.
 - `cargo audit` — PASS; no vulnerabilities reported.
 - Local Gate (`driftwatchdog gate` in repo root) — PASS (8/8 checks:
