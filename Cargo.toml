@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/labrys-core"]
+resolver = "2"

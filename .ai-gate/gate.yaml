@@ -1,0 +1,29 @@
+version: 1
+runtime: driftwatchdog
+profile: rust-platform
+rule_pack: rust-platform@0.1.0
+checks:
+  repository_integrity: true
+  format: true
+  lint: true
+  build: true
+  tests: true
+  security: true
+  openspec_change_names: true
+  openspec_strict_validation: true
+blocking:
+  - FAIL
+  - REVIEW_REQUIRED
+# NOTE: workflow treats BLOCKED as blocking (see .ai-rules/completion.md), but
+# driftwatchdog 0.1.0 gate schema accepts only FAIL/REVIEW_REQUIRED here.
+# The shared Gate Runtime owns adapters, runners, caches, and universal rule packs.
+# This repository declares policy only; it does not vendor the gate implementation.
+commands:
+  repository_integrity: "git diff --check"
+  format: "cargo fmt --all --check"
+  lint: "cargo clippy --workspace --all-targets -- -D warnings"
+  build: "cargo build --workspace"
+  tests: "cargo test --workspace"
+  security: "cargo audit"
+  openspec_change_names: "node scripts/check-openspec-change-names.mjs"
+  openspec_strict_validation: "openspec validate --all --strict"

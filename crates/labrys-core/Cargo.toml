@@ -1,0 +1,18 @@
+[package]
+name = "labrys-core"
+version = "0.1.0"
+edition = "2021"
+description = "Labrys control-plane foundation: canonical Application model, environments, desired state, and portable manifests"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "1"
+uuid = { version = "1", features = ["serde", "v4"] }
+
+[dev-dependencies]
+serde_json = "1"
+serde_yaml = "0.9"

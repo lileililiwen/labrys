@@ -1,0 +1,42 @@
+schema: spec-driven
+
+context: |
+  Labrys is an agent-native PaaS for building, adopting, running, and shipping
+  applications. The top-level object is Application. Generated and imported
+  projects share one model. Core boundaries are AgentBackend, Tool, Capability,
+  Resource, Provider, Binding, Runtime, Inspector, Controller, Verifier,
+  Workspace, Preview, Deployment, SecretStore, and Audit. The planned control
+  plane uses Rust, Tokio, Axum, SQLx, Serde, Tracing, and OpenTelemetry; the
+  dashboard uses Next.js, React, TypeScript, Tailwind, and shadcn/ui. Generic
+  container compatibility is the minimum runtime boundary. This repository is
+  planning-first until implementation evidence is recorded.
+
+rules:
+  proposal:
+    - Preserve the full Labrys brief and state explicit non-goals.
+    - Identify dependencies and observable success and failure boundaries.
+  design:
+    - Keep Application, AgentBackend, Runtime, Capability, Provider, Binding,
+      Resource, Inspector, Controller, and Verifier as separate concepts.
+    - Prefer protocol/process boundaries for extension points.
+  tasks:
+    - Order tasks by dependency and include verification evidence.
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours

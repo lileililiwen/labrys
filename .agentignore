@@ -1,0 +1,16 @@
+.git/
+.ariadex/
+.codegraph/
+target/
+dist/
+build/
+node_modules/
+.next/
+coverage/
+*.log
+*.sqlite
+*.db
+*.pem
+*.key
+.env
+.env.*
