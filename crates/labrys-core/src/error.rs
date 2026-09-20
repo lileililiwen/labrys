@@ -35,6 +35,8 @@ pub enum CoreError {
     CapabilityBinding(String),
     #[error("secret not found: {0}")]
     SecretNotFound(String),
+    #[error("reconciliation violation: {0}")]
+    Reconciliation(String),
     #[error("serialization error: {0}")]
     Serialization(String),
 }

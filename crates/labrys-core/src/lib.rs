@@ -10,6 +10,7 @@
 pub mod agent;
 pub mod application;
 pub mod capability;
+pub mod controller;
 pub mod environment;
 pub mod error;
 pub mod ids;
@@ -35,11 +36,18 @@ pub use capability::{
     CapabilityMode, EnvContract, EnvSource, InjectionGrant, MasterKey, ModeTransition, Provider,
     ResourceRef, SealedSecret, SecretAction, SecretAudit, SecretStore, CAPABILITY_CONTRACT_VERSION,
 };
+pub use controller::{
+    aggregate_health, redact_reason, ApplicationController, CapabilityController, CheckSource,
+    Controller, DeploymentController, Drift, DriftKind, EnqueueOutcome, FailureRecord, HealthCheck,
+    HealthReport, HealthState, IdempotencyKey, Job, JobAction, JobQueue, JobStatus,
+    ObservationSource, PreviewController, Reconciliation, Resource, ResourceController,
+    ResourcePhase, ResourceTransition, RetryPolicy, RECONCILIATION_CONTRACT_VERSION,
+};
 pub use environment::{Environment, EnvironmentKind};
 pub use error::{CoreError, Result};
 pub use ids::{
-    AgentSessionId, ApplicationId, BindingId, EnvironmentId, FeedbackId, PreviewId, ResourceId,
-    WorkspaceId,
+    AgentSessionId, ApplicationId, BindingId, EnvironmentId, FeedbackId, JobId, PreviewId,
+    ResourceId, WorkspaceId,
 };
 pub use inspector::{
     AdoptionItem, AdoptionItemKind, AdoptionPlan, ApplicationProfile, BroadChangeGate, ChangeStep,

@@ -324,3 +324,43 @@ impl FromStr for ResourceId {
             .map_err(|_| format!("invalid resource id: {s}"))
     }
 }
+
+/// Stable identifier for a [`crate::controller::Job`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct JobId(Uuid);
+
+impl JobId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl Default for JobId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for JobId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "job_{}", self.0.simple())
+    }
+}
+
+impl FromStr for JobId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let hex = s
+            .strip_prefix("job_")
+            .ok_or_else(|| format!("invalid job id: {s}"))?;
+        Uuid::parse_str(hex)
+            .map(Self)
+            .map_err(|_| format!("invalid job id: {s}"))
+    }
+}
