@@ -1,4 +1,4 @@
-current_spec: capability-provider-binding-and-secrets
+current_spec: controllers-and-resource-lifecycle
 
 # Labrys handoff
 
@@ -13,12 +13,17 @@ and ARCHIVED as `openspec/changes/archive/2026-09-20-application-foundation-and-
 `runtime-and-sandbox` is implemented, locally verified, and ARCHIVED as
 `openspec/changes/archive/2026-09-20-runtime-and-sandbox`, and
 `workspace-and-preview` is implemented, locally verified, and ARCHIVED as
-`openspec/changes/archive/2026-09-20-workspace-and-preview`, with canonical
+`openspec/changes/archive/2026-09-20-workspace-and-preview`, and
+`capability-provider-binding-and-secrets` is implemented, locally verified, and
+ARCHIVED as
+`openspec/changes/archive/2026-09-20-capability-provider-binding-and-secrets`,
+with canonical
 specs promoted to `openspec/specs/application-model/spec.md`,
 `openspec/specs/project-inspector/spec.md` (3 requirements),
 `openspec/specs/agent-platform/spec.md` (3 requirements),
-`openspec/specs/runtime-platform/spec.md` (3 requirements), and
-`openspec/specs/preview-platform/spec.md` (3 requirements).
+`openspec/specs/runtime-platform/spec.md` (3 requirements),
+`openspec/specs/preview-platform/spec.md` (3 requirements), and
+`openspec/specs/capability-platform/spec.md` (4 requirements).
 The `labrys-core` crate now holds a deterministic `Inspector`
 (`crates/labrys-core/src/inspector.rs`): `INSPECTION_ORDER` (dockerfile →
 compose → manifest → framework_convention → configuration → ci → source,
@@ -63,11 +68,29 @@ access, build failures carry limit + recovery detail into
 `to_event_detail`), `ExpoShare` with `discover_server_url`, QR payloads
 binding project/session/transport, Expo Go versus development-build
 `ExpoTransport` distinction, expiry/revocation lifecycle, and `Feedback`
-association that rejects cross-workspace preview or share attachment.
-57 tests pass (10 foundation + 9 inspector-adoption + 10 agent-protocol in
+association that rejects cross-workspace preview or share attachment; plus a
+deterministic capability and secrets model
+(`crates/labrys-core/src/capability.rs`): versioned `Capability` (with
+dependencies), `Provider` (capability supply, supported modes, reversal
+support), and `Binding` (`Framework`/`Generic` kinds with a portable
+`EnvContract` of literal/secret-ref/resource-field sources) as separate
+objects; `resolve_binding` with framework-first selection, generic fallback,
+and provider-mismatch/missing/conflict rejection; generic contracts for
+PostgreSQL, object storage, auth, and file storage; `BoundCapability` with
+managed/external/adopted `ModeTransition` history that requires a granted,
+named `ExplicitApproval`, records adoption source, and refuses reversal the
+provider cannot support; and a `SecretStore` sealing values under an external
+`MasterKey` (XOR keystream stand-in for encrypted PostgreSQL) with
+`redact` stripping known plaintext from events/logs, grant-scoped `inject`
+and `inject_binding` (foreign application or environment rejected),
+versioned `rotate`, `replace` that requires human approval for production
+scopes while neither old nor new value enters the audit record, and
+`delete`.
+79 tests pass (10 foundation + 9 inspector-adoption + 10 agent-protocol in
 `crates/labrys-core/tests/agent_protocol.rs` + 13 runtime-sandbox in
 `crates/labrys-core/tests/runtime_sandbox.rs` + 15 workspace-preview in
-`crates/labrys-core/tests/workspace_preview.rs`). No CI, deployment,
+`crates/labrys-core/tests/workspace_preview.rs` + 22 capability-secrets in
+`crates/labrys-core/tests/capability_secrets.rs`). No CI, deployment,
 or production evidence exists yet. The active queue remains a delegated
 implementation handoff, not a claim of delivered product behavior. The pre-existing local Gate
 blocker is FIXED: `.ai-gate/gate.yaml` no longer carries the rejected `notes`
@@ -76,31 +99,33 @@ field or `BLOCKED` blocking entry, declares `commands` for all 8 checks, and
 
 ## Next change
 
-Implement only `capability-provider-binding-and-secrets` (ROADMAP Phase 2,
-item 6) after reviewing its proposal, design, tasks, and capability scenarios.
+Implement only `controllers-and-resource-lifecycle` (ROADMAP Phase 2, item 7)
+after reviewing its proposal, design, tasks, and capability scenarios.
 Keep the pointer above in sync with `openspec list`; never use `none` or `TBD`.
 
 ## Verification evidence
 
-- `workspace-and-preview` tasks.md — 5/5 checked from implementation evidence.
-- `openspec/changes/archive/2026-09-20-workspace-and-preview` — archived with
-  specs promoted (`preview-platform: create`, +3); canonical spec at
-  `openspec/specs/preview-platform/spec.md` (3 requirements).
+- `capability-provider-binding-and-secrets` tasks.md — 5/5 checked from
+  implementation evidence.
+- `openspec/changes/archive/2026-09-20-capability-provider-binding-and-secrets`
+  — archived with specs promoted (`capability-platform: create`, +4); canonical
+  spec at `openspec/specs/capability-platform/spec.md` (4 requirements).
 - `node scripts/check-openspec-change-names.mjs` — PASS; all active names are valid.
-- `openspec list` — PASS; 5 active changes (foundation + inspector + agent +
-  runtime + workspace archived, next is
-  `capability-provider-binding-and-secrets` at 0/5).
+- `openspec list` — PASS; 4 active changes (foundation + inspector + agent +
+  runtime + workspace + capability archived, next is
+  `controllers-and-resource-lifecycle` at 0/5).
 - `openspec validate --all --strict` — PASS; 10 items passed, 0 failed
-  (5 active changes + promoted `spec/agent-platform` + `spec/application-model`
-  + `spec/preview-platform` + `spec/project-inspector` +
-  `spec/runtime-platform`).
+  (4 active changes + promoted `spec/agent-platform` + `spec/application-model`
+  + `spec/capability-platform` + `spec/preview-platform` +
+  `spec/project-inspector` + `spec/runtime-platform`).
 - `git diff --check` — PASS; no whitespace errors reported.
-- `cargo build --workspace` — PASS; `cargo test --workspace` — PASS (57/57:
+- `cargo build --workspace` — PASS; `cargo test --workspace` — PASS (79/79:
   10/10 in `crates/labrys-core/tests/application_foundation.rs`, 9/9 in
   `crates/labrys-core/tests/inspector_adoption.rs`, 10/10 in
   `crates/labrys-core/tests/agent_protocol.rs`, 13/13 in
   `crates/labrys-core/tests/runtime_sandbox.rs`, 15/15 in
-  `crates/labrys-core/tests/workspace_preview.rs`).
+  `crates/labrys-core/tests/workspace_preview.rs`, 22/22 in
+  `crates/labrys-core/tests/capability_secrets.rs`).
 - `cargo fmt --all --check` — PASS; `cargo clippy --workspace --all-targets -- -D warnings` — PASS.
 - `cargo audit` — PASS; no vulnerabilities reported.
 - Local Gate (`driftwatchdog gate` in repo root) — PASS (8/8 checks:
