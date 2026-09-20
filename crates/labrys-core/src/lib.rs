@@ -9,6 +9,7 @@
 
 pub mod agent;
 pub mod application;
+pub mod capability;
 pub mod environment;
 pub mod error;
 pub mod ids;
@@ -28,9 +29,18 @@ pub use agent::{
     NORMALIZED_EVENT_NAMES,
 };
 pub use application::{Application, ApplicationStatus, AuditMetadata, LifecycleCollections};
+pub use capability::{
+    generic_auth_binding, generic_file_storage_binding, generic_object_storage_binding,
+    generic_postgres_binding, resolve_binding, Binding, BindingKind, BoundCapability, Capability,
+    CapabilityMode, EnvContract, EnvSource, InjectionGrant, MasterKey, ModeTransition, Provider,
+    ResourceRef, SealedSecret, SecretAction, SecretAudit, SecretStore, CAPABILITY_CONTRACT_VERSION,
+};
 pub use environment::{Environment, EnvironmentKind};
 pub use error::{CoreError, Result};
-pub use ids::{AgentSessionId, ApplicationId, EnvironmentId, FeedbackId, PreviewId, WorkspaceId};
+pub use ids::{
+    AgentSessionId, ApplicationId, BindingId, EnvironmentId, FeedbackId, PreviewId, ResourceId,
+    WorkspaceId,
+};
 pub use inspector::{
     AdoptionItem, AdoptionItemKind, AdoptionPlan, ApplicationProfile, BroadChangeGate, ChangeStep,
     Evidence, ExplicitApproval, Fact, Inspector, InspectorPlugin, PluginFinding, ProjectSnapshot,

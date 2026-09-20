@@ -244,3 +244,83 @@ impl FromStr for FeedbackId {
             .map_err(|_| format!("invalid feedback id: {s}"))
     }
 }
+
+/// Stable identifier for a [`crate::capability::BoundCapability`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct BindingId(Uuid);
+
+impl BindingId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl Default for BindingId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for BindingId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "bnd_{}", self.0.simple())
+    }
+}
+
+impl FromStr for BindingId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let hex = s
+            .strip_prefix("bnd_")
+            .ok_or_else(|| format!("invalid binding id: {s}"))?;
+        Uuid::parse_str(hex)
+            .map(Self)
+            .map_err(|_| format!("invalid binding id: {s}"))
+    }
+}
+
+/// Stable identifier for a [`crate::capability::ResourceRef`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ResourceId(Uuid);
+
+impl ResourceId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl Default for ResourceId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for ResourceId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "res_{}", self.0.simple())
+    }
+}
+
+impl FromStr for ResourceId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let hex = s
+            .strip_prefix("res_")
+            .ok_or_else(|| format!("invalid resource id: {s}"))?;
+        Uuid::parse_str(hex)
+            .map(Self)
+            .map_err(|_| format!("invalid resource id: {s}"))
+    }
+}

@@ -31,6 +31,10 @@ pub enum CoreError {
     WorkspaceState(String),
     #[error("preview unavailable: {0}")]
     PreviewUnavailable(String),
+    #[error("capability binding violation: {0}")]
+    CapabilityBinding(String),
+    #[error("secret not found: {0}")]
+    SecretNotFound(String),
     #[error("serialization error: {0}")]
     Serialization(String),
 }
