@@ -293,7 +293,7 @@ the binary links only `sqlx-postgres`).
 
 ## Current spec
 
-Two planning-only changes remain authored (not implemented); all tasks are
+One planning-only change remains authored (not implemented); all tasks are
 unchecked planning artifacts:
 
 - `executable-dispatch-wiring` is implemented, locally verified, and ARCHIVED
@@ -309,12 +309,30 @@ unchecked planning artifacts:
   as `openspec/changes/archive/2026-09-21-secret-encryption-hardening`, with
   the canonical spec promoted to
   `openspec/specs/secret-encryption-hardening/spec.md` (2 requirements).
-- `control-plane-api-hardening` (parallelizable, no dependencies) —
-  `current_spec: control-plane-api-hardening`
-- `runtime-tier-depth-expansion` (parallelizable, no dependencies)
+- `control-plane-api-hardening` is implemented, locally verified, and ARCHIVED
+  as `openspec/changes/archive/2026-09-21-control-plane-api-hardening`, with
+  the canonical spec promoted to
+  `openspec/specs/control-plane-api-hardening/spec.md` (2 requirements).
+- `runtime-tier-depth-expansion` (parallelizable, no dependencies) —
+  `current_spec: runtime-tier-depth-expansion`
 
 The pointer marks the next parallelizable change. Implementation of it has not
 started.
+
+Verification evidence for `control-plane-api-hardening` (commit `d123752`):
+`cargo test --workspace` 328/328 (16 new: 7 `auth` unit + 9 `api_hardening`
+integration) against isolated PostgreSQL 16 + Docker, `npm run typecheck`
+PASS + 21/21 vitest PASS, `smoke-staging.sh` 19/19 (2 new auth stages:
+scope-denied + unknown-token), `cargo fmt --check` PASS, `cargo clippy
+--workspace --all-targets` PASS, `secret-scan.sh` PASS (prerequisite:
+`sk-live-*` test canaries renamed to `test-api-key-*`, no allowlist
+expansion), `cargo audit` exit 0 (new `axum-server`/`rustls`/
+`rustls-pemfile`/`subtle`/`zeroize` deps), `driftwatchdog gate` 8/8 (with
+`LABRYS_DATABASE_URL` exported, same requirement as prior changes),
+`openspec validate --all --strict` 26 items passed. Public-surface changes:
+`ApiConfig`/`ApiState` now carry a `TokenStore` (multi-token
+`LABRYS_API_TOKENS(_FILE)`, bootstrap warning, SIGHUP reload), actors bind
+to token scope, TLS/rate-limit config added, CLI gains `--tls-ca`.
 
 Verification evidence for `secret-encryption-hardening` (commit `1100cca`):
 `cargo test --workspace` 312/312 (13 new: 4 in-module cipher unit + 9
