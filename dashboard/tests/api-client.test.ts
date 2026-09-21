@@ -56,4 +56,33 @@ describe("typed API client contract", () => {
     expect(calledUrl).toContain("/v1/applications/demo/health");
     expect(envelope.ok).toBe(true);
   });
+
+  it("surfaces auth denials as actionable errors with server recovery", async () => {
+    const client = new DashboardApiClient({
+      baseUrl: "http://api:8080",
+      token: "test-token-12345678",
+      actor: "human:operator",
+      fetchImpl: (async () =>
+        jsonResponse(
+          { ok: false, recovery: "use a token whose scope matches the actor" },
+          403,
+        )) as unknown as typeof fetch,
+    });
+    await expect(client.health("demo")).rejects.toThrow(
+      "API 403 from /v1/applications/demo/health: use a token whose scope matches the actor",
+    );
+  });
+
+  it("falls back to generic guidance when auth responses lack recovery", async () => {
+    const client = new DashboardApiClient({
+      baseUrl: "http://api:8080",
+      token: "test-token-12345678",
+      actor: "human:operator",
+      fetchImpl: (async () =>
+        jsonResponse({ ok: false }, 401)) as unknown as typeof fetch,
+    });
+    await expect(client.version()).rejects.toThrow(
+      "API 401 from /v1/version: check the dashboard API token and actor, then retry",
+    );
+  });
 });

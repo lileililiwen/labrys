@@ -8,9 +8,19 @@
 //! redacted, attributable evidence from the repositories.
 //!
 //! Boundaries:
-//! - Every route except `GET /v1/version` requires a bearer token
-//!   (`LABRYS_API_TOKEN`); the actor travels in `x-labryst-actor`
-//!   (`human:<name>`, `agent:<session>:<name>`, `platform:<name>`).
+//! - Every route except `GET /v1/version` requires a bearer token from the
+//!   process-configured [`TokenStore`](crate::auth::TokenStore) (multi-token
+//!   `LABRYS_API_TOKENS(_FILE)` or single-token `LABRYS_API_TOKEN`
+//!   bootstrap); the actor travels in `x-labryst-actor`
+//!   (`human:<name>` or `agent:<session>:<name>`) and must match the token
+//!   scope — an agent-scoped token can never claim a human actor.
+//! - Unknown, expired, and revoked tokens share one 401 response (no
+//!   identity oracle); every denial is audit-logged with token ids or hash
+//!   fingerprints, never secret values.
+//! - Plain HTTP serves loopback only; non-loopback binds require TLS
+//!   (`LABRYS_TLS_CERT_FILE`/`LABRYS_TLS_KEY_FILE`) or the explicit
+//!   disposable-environment flag. A per-IP rate limiter sits in front of
+//!   auth to blunt credential probing.
 //! - Agent actors cannot invoke human-only lifecycle mutations (import,
 //!   build, deploy, rollback); rollback additionally requires a granted,
 //!   named human approval. Denials happen before any job is enqueued and
@@ -27,9 +37,11 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::extract::Request;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{ConnectInfo, Path, Query, State},
     http::{HeaderMap, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -43,6 +55,10 @@ use labrys_core::{
     PLUGIN_PROTOCOL_VERSION,
 };
 
+use crate::auth::{
+    bind_policy, AuthDenyReason, BindPolicy, RateLimiter, TlsConfig, TokenStore,
+    DEFAULT_RATE_LIMIT_PER_MINUTE,
+};
 use crate::error::{ControlPlaneError, Result};
 use crate::jobs::PgJobQueue;
 use crate::observability::{PgAuditLog, PgEventStore, PgEvidenceStore, PgLogStore};
@@ -52,12 +68,18 @@ use crate::{redact, Pool};
 /// Version of the HTTP API surface this crate serves.
 pub const API_VERSION: u32 = 1;
 
-/// Process configuration for the API server. The bearer token comes from
-/// process configuration, never from a manifest or agent prompt.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Process configuration for the API server. Bearer tokens come from
+/// process configuration, never from a manifest or agent prompt:
+/// `LABRYS_API_TOKENS_FILE` wins over inline `LABRYS_API_TOKENS`
+/// (`<id>:<scope>:<expiry>:<secret>` per line), falling back to the
+/// single-token `LABRYS_API_TOKEN` bootstrap that warns at startup.
+#[derive(Debug, Clone)]
 pub struct ApiConfig {
-    pub token: String,
+    pub tokens: Arc<TokenStore>,
     pub bind_addr: SocketAddr,
+    pub tls: Option<TlsConfig>,
+    pub allow_plain_http: bool,
+    pub rate_limit_per_minute: u32,
 }
 
 impl ApiConfig {
@@ -66,30 +88,71 @@ impl ApiConfig {
     }
 
     pub fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Result<Self> {
-        let token = lookup("LABRYS_API_TOKEN").unwrap_or_default();
         let bind_addr: SocketAddr = match lookup("LABRYS_API_ADDR") {
             None => "127.0.0.1:8080".parse().expect("default addr parses"),
             Some(raw) => raw.parse().map_err(|_| {
                 ControlPlaneError::Config(format!("LABRYS_API_ADDR is not a socket address: {raw}"))
             })?,
         };
-        let config = Self { token, bind_addr };
+        let tls = match (
+            lookup("LABRYS_TLS_CERT_FILE"),
+            lookup("LABRYS_TLS_KEY_FILE"),
+        ) {
+            (None, None) => None,
+            (Some(cert), Some(key)) => Some(TlsConfig {
+                cert_file: cert.trim().into(),
+                key_file: key.trim().into(),
+            }),
+            _ => {
+                return Err(ControlPlaneError::Config(
+                    "TLS needs both LABRYS_TLS_CERT_FILE and LABRYS_TLS_KEY_FILE; set both or neither, then retry".to_string(),
+                ));
+            }
+        };
+        let allow_plain_http = lookup("LABRYS_ALLOW_PLAIN_HTTP")
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        let rate_limit_per_minute = match lookup("LABRYS_API_RATE_LIMIT_PER_MINUTE") {
+            None => DEFAULT_RATE_LIMIT_PER_MINUTE,
+            Some(raw) => raw.parse().map_err(|_| {
+                ControlPlaneError::Config(format!(
+                    "LABRYS_API_RATE_LIMIT_PER_MINUTE must be a positive integer, got '{raw}'"
+                ))
+            })?,
+        };
+        let tokens = TokenStore::from_lookup(&lookup)?;
+        let config = Self {
+            tokens,
+            bind_addr,
+            tls,
+            allow_plain_http,
+            rate_limit_per_minute,
+        };
         config.validate()?;
         Ok(config)
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.token.trim().is_empty() {
+        if self.tokens.is_empty() {
             return Err(ControlPlaneError::Config(
                 "API token is required (LABRYS_API_TOKEN)".to_string(),
             ));
         }
-        if self.token.len() < 16 {
-            return Err(ControlPlaneError::Config(
-                "API token must be at least 16 characters".to_string(),
-            ));
-        }
+        // Refuses non-loopback plain HTTP without TLS or the explicit
+        // disposable flag; never silently serves it.
+        bind_policy(&self.bind_addr, self.tls.as_ref(), self.allow_plain_http)?;
         Ok(())
+    }
+
+    /// Startup line directing operators from the bootstrap to rotation.
+    pub fn auth_summary(&self) -> String {
+        match self.tokens.bootstrap_warning() {
+            Some(warning) => format!("api auth: WARNING — {warning}"),
+            None => format!(
+                "api auth: {} scoped token(s) ({})",
+                self.tokens.len(),
+                self.tokens.token_ids().join(", ")
+            ),
+        }
     }
 }
 
@@ -138,7 +201,8 @@ pub struct ApiState {
     pub audit: PgAuditLog,
     pub evidence: PgEvidenceStore,
     pub plugins: Arc<tokio::sync::Mutex<labrys_core::PluginRegistry>>,
-    pub token: String,
+    pub tokens: Arc<TokenStore>,
+    pub rate_limiter: Arc<RateLimiter>,
     pub secrets: Vec<String>,
 }
 
@@ -148,6 +212,11 @@ impl ApiState {
     }
 
     pub fn with_secrets(pool: Pool, token: String, secrets: Vec<String>) -> Self {
+        let tokens = TokenStore::bootstrap(token).expect("bootstrap token is valid");
+        Self::with_token_store(pool, tokens, secrets)
+    }
+
+    pub fn with_token_store(pool: Pool, tokens: Arc<TokenStore>, secrets: Vec<String>) -> Self {
         Self {
             jobs: PgJobQueue::new(pool.clone()),
             apps: PgApplicationStore::new(pool.clone()),
@@ -160,7 +229,8 @@ impl ApiState {
             evidence: PgEvidenceStore::new(pool.clone(), labrys_core::RetentionPolicy::default()),
             plugins: Arc::new(tokio::sync::Mutex::new(labrys_core::PluginRegistry::new())),
             pool,
-            token,
+            tokens,
+            rate_limiter: Arc::new(RateLimiter::new(DEFAULT_RATE_LIMIT_PER_MINUTE)),
             secrets,
         }
     }
@@ -213,6 +283,18 @@ impl ApiError {
             "api.forbidden",
             message,
             recovery,
+            trace_id,
+        )
+    }
+
+    fn rate_limited(trace_id: &str, retry_after_secs: u64) -> Self {
+        Self::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "api.rate_limited",
+            "request rate exceeded for this client",
+            format!(
+                "back off and retry after {retry_after_secs}s; operators raise LABRYS_API_RATE_LIMIT_PER_MINUTE for bulk callers"
+            ),
             trace_id,
         )
     }
@@ -278,21 +360,43 @@ fn idempotency_of(headers: &HeaderMap) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Extracts and validates the bearer token plus actor context. Called at the
-/// top of every authenticated handler.
-fn actor_context(
+/// Extracts and validates the bearer token plus scope-bound actor context.
+/// Called at the top of every authenticated handler. Unknown, expired, and
+/// revoked tokens share one 401 response (no identity oracle); every denial
+/// is audit-logged with token ids or hash fingerprints, never secret values.
+/// `target` names the endpoint for the audit row (e.g. `"POST /v1/import"`).
+async fn authorized(
     state: &ApiState,
     headers: &HeaderMap,
     trace_id: &str,
+    target: &str,
 ) -> std::result::Result<ActorContext, ApiError> {
     let bearer = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or_default();
-    if bearer != state.token {
-        return Err(ApiError::unauthorized(trace_id));
-    }
+    let authenticated = match state.tokens.authenticate(bearer) {
+        Ok(authenticated) => authenticated,
+        Err(denial) => {
+            let reference = match (&denial.reason, denial.known_id) {
+                (_, Some(id)) => format!("token '{id}'"),
+                _ => format!("unknown token ({})", crate::auth::token_fingerprint(bearer)),
+            };
+            let cause = match denial.reason {
+                AuthDenyReason::Expired => "expired",
+                AuthDenyReason::Revoked => "revoked",
+                AuthDenyReason::Unknown => "unknown",
+            };
+            audit_auth_denial(
+                state,
+                target,
+                &format!("auth rejected: {cause} bearer for {reference}"),
+            )
+            .await;
+            return Err(ApiError::unauthorized(trace_id));
+        }
+    };
     let raw = headers
         .get("x-labryst-actor")
         .and_then(|v| v.to_str().ok())
@@ -302,15 +406,83 @@ fn actor_context(
             StatusCode::BAD_REQUEST,
             "api.actor_required",
             "missing or malformed actor identity",
-            "pass x-labryst-actor: human:<name>, agent:<session>:<name>, or platform:<name>",
+            "pass x-labryst-actor: human:<name> or agent:<session>:<name>",
             trace_id,
         )
     })?;
+    // The request actor binds to the credential scope: an agent-scoped
+    // token can never claim a human actor (and vice versa), while agent
+    // approval boundaries and attribution shapes are unchanged.
+    if !authenticated.scope.allows(&actor) {
+        let claimed = match &actor {
+            labrys_core::CliActor::Human { .. } => "human",
+            labrys_core::CliActor::Agent { .. } => "agent",
+            labrys_core::CliActor::Platform { .. } => "platform",
+        };
+        audit_auth_denial(
+            state,
+            target,
+            &format!(
+                "auth rejected: {}-scoped token '{}' cannot claim a {claimed} actor",
+                match authenticated.scope {
+                    crate::auth::TokenScope::Human => "human",
+                    crate::auth::TokenScope::Agent => "agent",
+                },
+                authenticated.id,
+            ),
+        )
+        .await;
+        return Err(ApiError::forbidden(
+            trace_id,
+            format!(
+                "token '{}' is not scoped for a {claimed} actor",
+                authenticated.id
+            ),
+            "use a token whose scope matches the actor, or have a human operator approve and run human-only lifecycle mutations",
+        ));
+    }
     Ok(ActorContext {
         actor,
         trace_id: trace_id.to_string(),
         idempotency_key: idempotency_of(headers),
     })
+}
+
+/// Records an authentication denial in the hash-chained audit log. The
+/// detail carries token ids or fingerprints only — never secret values —
+/// and is redacted against known secrets before SQL. Audit-write failures
+/// never mask the denial itself.
+async fn audit_auth_denial(state: &ApiState, target: &str, detail: &str) {
+    let _ = state
+        .audit
+        .append(
+            chrono::Utc::now(),
+            "platform:api-gate",
+            "auth.rejected",
+            target,
+            detail,
+            &state.secret_refs(),
+        )
+        .await;
+}
+
+/// Per-IP rate limiter sitting in front of auth: credential probing meets
+/// 429 before it can spend token comparisons. The client IP comes from the
+/// connection extension, so it works behind both plain and TLS serving.
+async fn rate_limit(State(state): State<ApiState>, req: Request, next: Next) -> Response {
+    if let Some(ConnectInfo(addr)) = req.extensions().get::<ConnectInfo<SocketAddr>>() {
+        if let Err(retry_after) = state.rate_limiter.check(addr.ip()) {
+            let trace_id = req
+                .headers()
+                .get("x-trace-id")
+                .and_then(|v| v.to_str().ok())
+                .filter(|s| !s.trim().is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("trace-{}", uuid::Uuid::new_v4().simple()));
+            return ApiError::rate_limited(&trace_id, retry_after).into_response();
+        }
+    }
+    next.run(req).await
 }
 
 fn parse_actor(raw: &str) -> Option<labrys_core::CliActor> {
@@ -594,7 +766,7 @@ async fn import(
     Json(body): Json<ImportBody>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(&state, &headers, &trace_id, "POST /v1/import").await?;
     if let Some(err) = forbid_agent(&ctx, "import") {
         return Err(err);
     }
@@ -668,7 +840,13 @@ async fn inspect(
     Path(raw): Path<String>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(
+        &state,
+        &headers,
+        &trace_id,
+        "GET /v1/applications/{app}/inspect",
+    )
+    .await?;
     let app = load_app(&state, &ctx, &raw).await?;
     let capabilities = state
         .capabilities
@@ -757,7 +935,13 @@ async fn capability(
     Json(body): Json<MutationBody>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(
+        &state,
+        &headers,
+        &trace_id,
+        "POST /v1/applications/{app}/capabilities",
+    )
+    .await?;
     let key = require_idempotency(&ctx, "capability")?;
     if let Some(replayed) = check_replay(&state, Some(&key))
         .await
@@ -816,7 +1000,7 @@ async fn mutate_simple(
     target_suffix: &str,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(headers);
-    let ctx = actor_context(state, headers, &trace_id)?;
+    let ctx = authorized(state, headers, &trace_id, command).await?;
     let key = require_idempotency(&ctx, command)?;
     if let Some(replayed) = check_replay(state, Some(&key))
         .await
@@ -880,7 +1064,13 @@ async fn build(
     Json(body): Json<MutationBody>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(
+        &state,
+        &headers,
+        &trace_id,
+        "POST /v1/applications/{app}/build",
+    )
+    .await?;
     if let Some(err) = forbid_agent(&ctx, "build") {
         return Err(err);
     }
@@ -932,7 +1122,13 @@ async fn deploy(
     Json(body): Json<MutationBody>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(
+        &state,
+        &headers,
+        &trace_id,
+        "POST /v1/applications/{app}/deploy",
+    )
+    .await?;
     if forbid_agent(&ctx, "deploy").is_some() {
         return Err(ApiError::forbidden(
             &ctx.trace_id,
@@ -1010,7 +1206,13 @@ async fn rollback(
     Json(body): Json<MutationBody>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(
+        &state,
+        &headers,
+        &trace_id,
+        "POST /v1/applications/{app}/rollback",
+    )
+    .await?;
     // Agent actors cannot invoke rollback: the command fails here without
     // enqueueing anything, and the output states the approval requirement.
     if forbid_agent(&ctx, "rollback").is_some() {
@@ -1134,7 +1336,13 @@ async fn deployments(
     Query(page): Query<PageQuery>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(
+        &state,
+        &headers,
+        &trace_id,
+        "GET /v1/applications/{app}/deployments",
+    )
+    .await?;
     let app = load_app(&state, &ctx, &raw).await?;
     let (limit, offset) = clamp_page(&page);
     let envs: Vec<_> = match &page.environment {
@@ -1183,7 +1391,13 @@ async fn logs(
     Query(page): Query<PageQuery>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(
+        &state,
+        &headers,
+        &trace_id,
+        "GET /v1/applications/{app}/logs",
+    )
+    .await?;
     let app = load_app(&state, &ctx, &raw).await?;
     let _ = app;
     let (limit, offset) = clamp_page(&page);
@@ -1257,7 +1471,13 @@ async fn health(
     Query(page): Query<PageQuery>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(
+        &state,
+        &headers,
+        &trace_id,
+        "GET /v1/applications/{app}/health",
+    )
+    .await?;
     let app = load_app(&state, &ctx, &raw).await?;
     let envs: Vec<_> = match &page.environment {
         Some(name) => app
@@ -1360,7 +1580,13 @@ async fn doctor(
     Path(raw): Path<String>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(
+        &state,
+        &headers,
+        &trace_id,
+        "GET /v1/applications/{app}/doctor",
+    )
+    .await?;
     let app = load_app(&state, &ctx, &raw).await?;
     let mut findings = Vec::new();
     let mut has_error = false;
@@ -1441,7 +1667,13 @@ async fn capabilities(
     Path(raw): Path<String>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(
+        &state,
+        &headers,
+        &trace_id,
+        "GET /v1/applications/{app}/capabilities",
+    )
+    .await?;
     let app = load_app(&state, &ctx, &raw).await?;
     let list = state
         .capabilities
@@ -1476,7 +1708,13 @@ async fn resources(
     Path(raw): Path<String>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(
+        &state,
+        &headers,
+        &trace_id,
+        "GET /v1/applications/{app}/resources",
+    )
+    .await?;
     let app = load_app(&state, &ctx, &raw).await?;
     let list = state
         .resources
@@ -1510,7 +1748,7 @@ async fn job_status(
     Path(raw): Path<String>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(&state, &headers, &trace_id, "GET /v1/jobs/{job}").await?;
     let id: JobId = raw.parse().map_err(|_| {
         ApiError::not_found(
             &ctx.trace_id,
@@ -1552,7 +1790,7 @@ async fn negotiate_agent(
     Json(body): Json<NegotiateBody>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(&state, &headers, &trace_id, "POST /v1/agents/negotiate").await?;
     if let Err(err) = labrys_core::ensure_protocol_version(body.protocol_version) {
         return Err(ApiError::new(
             StatusCode::CONFLICT,
@@ -1583,7 +1821,7 @@ async fn handshake_plugin(
     Json(body): Json<HandshakeBody>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(&state, &headers, &trace_id, "POST /v1/plugins/handshake").await?;
     let mut plugins = state.plugins.lock().await;
     match plugins.register(body.manifest.clone()) {
         Ok(family) => Ok(Json(envelope(
@@ -1609,7 +1847,7 @@ async fn list_plugins(
     headers: HeaderMap,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
     let trace_id = trace_of(&headers);
-    let ctx = actor_context(&state, &headers, &trace_id)?;
+    let ctx = authorized(&state, &headers, &trace_id, "GET /v1/plugins").await?;
     let plugins = state.plugins.lock().await;
     let items: Vec<_> = plugins
         .report()
@@ -1635,7 +1873,9 @@ async fn list_plugins(
 }
 
 /// Builds the versioned router. The API is a thin layer: handlers validate,
-/// enqueue, and report; provider work stays behind controller jobs.
+/// enqueue, and report; provider work stays behind controller jobs. The
+/// per-IP rate limiter wraps every route so credential probing meets 429
+/// before it can spend token comparisons.
 pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/v1/version", get(version))
@@ -1660,5 +1900,114 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/agents/negotiate", post(negotiate_agent))
         .route("/v1/plugins/handshake", post(handshake_plugin))
         .route("/v1/plugins", get(list_plugins))
+        .layer(middleware::from_fn_with_state(state.clone(), rate_limit))
         .with_state(state)
+}
+
+/// Installs the process-wide rustls crypto provider (ring) once so TLS
+/// termination and TLS clients agree deterministically. Safe to call from
+/// tests and the daemon alike; an already-installed provider is kept.
+pub fn ensure_rustls_provider() {
+    static INSTALLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    INSTALLED.get_or_init(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        true
+    });
+}
+
+/// Serves the API per [`ApiConfig`]: TLS termination when cert/key files
+/// are configured, otherwise plain HTTP (loopback only unless the
+/// disposable flag was explicitly set — enforced by [`ApiConfig`]).
+pub async fn serve_api(config: &ApiConfig, state: ApiState) -> Result<()> {
+    let policy = bind_policy(
+        &config.bind_addr,
+        config.tls.as_ref(),
+        config.allow_plain_http,
+    )?;
+    let app = router(state).into_make_service_with_connect_info::<SocketAddr>();
+    match (&policy, &config.tls) {
+        (BindPolicy::Tls, Some(tls)) => {
+            ensure_rustls_provider();
+            let rustls = load_rustls_config(tls)?;
+            axum_server::bind_rustls(config.bind_addr, rustls)
+                .serve(app)
+                .await
+                .map_err(|e| {
+                    ControlPlaneError::Config(format!(
+                        "TLS API server on {} failed: {e}; check the cert/key files and port, then retry",
+                        config.bind_addr
+                    ))
+                })
+        }
+        _ => {
+            let listener = tokio::net::TcpListener::bind(config.bind_addr)
+                .await
+                .map_err(|e| {
+                    ControlPlaneError::Config(format!(
+                        "cannot bind API on {}: {e}; check LABRYS_API_ADDR, then retry",
+                        config.bind_addr
+                    ))
+                })?;
+            axum::serve(listener, app)
+                .await
+                .map_err(|e| ControlPlaneError::Config(format!("API server failed: {e}")))
+        }
+    }
+}
+
+/// Loads a rustls server config from PEM cert/key files. Only paths (never
+/// key material) appear in errors, and TLS keys are never logged.
+fn load_rustls_config(tls: &TlsConfig) -> Result<axum_server::tls_rustls::RustlsConfig> {
+    use std::io::BufReader;
+    let cert_bytes = std::fs::read(&tls.cert_file).map_err(|e| {
+        ControlPlaneError::Config(format!(
+            "cannot read TLS cert '{}': {e}",
+            tls.cert_file.display()
+        ))
+    })?;
+    let key_bytes = std::fs::read(&tls.key_file).map_err(|e| {
+        ControlPlaneError::Config(format!(
+            "cannot read TLS key '{}': {e}",
+            tls.key_file.display()
+        ))
+    })?;
+    let certs: Vec<rustls::pki_types::CertificateDer<'static>> =
+        rustls_pemfile::certs(&mut BufReader::new(&cert_bytes[..]))
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| {
+                ControlPlaneError::Config(format!(
+                    "TLS cert '{}' is not valid PEM: {e}",
+                    tls.cert_file.display()
+                ))
+            })?;
+    if certs.is_empty() {
+        return Err(ControlPlaneError::Config(format!(
+            "TLS cert '{}' holds no certificates",
+            tls.cert_file.display()
+        )));
+    }
+    let key = rustls_pemfile::private_key(&mut BufReader::new(&key_bytes[..]))
+        .map_err(|e| {
+            ControlPlaneError::Config(format!(
+                "TLS key '{}' is not valid PEM: {e}",
+                tls.key_file.display()
+            ))
+        })?
+        .ok_or_else(|| {
+            ControlPlaneError::Config(format!(
+                "TLS key '{}' holds no private key",
+                tls.key_file.display()
+            ))
+        })?;
+    let server_config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .map_err(|e| {
+            ControlPlaneError::Config(format!(
+                "TLS cert/key mismatch: {e}; reissue a matching pair, then retry"
+            ))
+        })?;
+    Ok(axum_server::tls_rustls::RustlsConfig::from_config(
+        Arc::new(server_config),
+    ))
 }

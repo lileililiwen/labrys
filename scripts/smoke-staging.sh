@@ -47,6 +47,7 @@ SCRATCH_URL="$(echo "$DB_URL" | sed -E "s|/[^/]*$|/$SCRATCH|")"
 
 PORT="${LABRYS_SMOKE_PORT:-18080}"
 TOKEN="smoke-test-token-0123456789"
+AGENT_TOKEN="smoke-agent-token-0123456789"
 FIXTURE="$(mktemp -d)"
 cat > "$FIXTURE/Dockerfile" <<'EOF'
 FROM alpine:3.20
@@ -68,7 +69,9 @@ cleanup() {
 trap cleanup EXIT
 
 LABRYS_DATABASE_URL="$SCRATCH_URL" LABRYS_RUN_MIGRATIONS=1 \
-  LABRYS_API_ADDR="127.0.0.1:$PORT" LABRYS_API_TOKEN="$TOKEN" \
+  LABRYS_API_ADDR="127.0.0.1:$PORT" \
+  LABRYS_API_TOKENS="smoke-human:human:never:$TOKEN
+smoke-agent:agent:never:$AGENT_TOKEN" \
   ./target/debug/control-plane >"$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 
@@ -110,7 +113,7 @@ run_stage() { # name, expected_exit, cli args...
 }
 
 HUMAN=(env LABRYS_ACTOR=human:smoke-operator "$LABRYS_BIN")
-AGENT=(env LABRYS_ACTOR="agent:smoke-session:smoke-bot" "$LABRYS_BIN")
+AGENT=(env LABRYS_API_TOKEN="$AGENT_TOKEN" LABRYS_ACTOR="agent:smoke-session:smoke-bot" "$LABRYS_BIN")
 
 run_stage "version" 0 "${HUMAN[@]}" version
 IMPORT_OUT="$("${HUMAN[@]}" import --name smoke-app --path "$FIXTURE" --idempotency-key "smoke-import-1")"
@@ -127,6 +130,8 @@ else
 fi
 run_stage "doctor" 0 "${HUMAN[@]}" doctor --application "$APP"
 run_stage "agent-deploy-denied" 1 "${AGENT[@]}" deploy --application "$APP" --environment production --idempotency-key "smoke-deploy-agent"
+run_stage "scope-denied-agent-on-human-token" 1 env LABRYS_API_TOKEN="$TOKEN" LABRYS_ACTOR="agent:smoke-session:smoke-bot" "$LABRYS_BIN" deploy --application "$APP" --environment production --idempotency-key "smoke-deploy-scope"
+run_stage "unknown-token-denied" 1 env LABRYS_API_TOKEN="wrong-token-value-00000000" "$LABRYS_BIN" inspect --application "$APP"
 run_stage "rollback-without-approval-denied" 2 "${HUMAN[@]}" rollback --application "$APP" --target rev-0 --idempotency-key "smoke-rollback-1"
 run_stage "logs" 0 "${HUMAN[@]}" logs --application "$APP" --limit 10
 run_stage "negotiate" 0 "${HUMAN[@]}" negotiate --protocol-version 1

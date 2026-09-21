@@ -67,6 +67,20 @@ cosign):
 
 ## Supported scope
 
+- API auth: scoped bearer tokens from `LABRYS_API_TOKENS_FILE` (preferred)
+  or inline `LABRYS_API_TOKENS`, one `<id>:<scope>:<expiry>:<secret>` line
+  per entry (scope `agent`|`human`, expiry RFC 3339 or `never`, secrets
+  ≥16 chars without `:`). The single-token `LABRYS_API_TOKEN` form stays
+  as a human-scoped bootstrap that warns at startup. Rotation is a config
+  update plus `SIGHUP` (or `TokenStore::reload`): the replacement succeeds
+  and the revoked token fails closed on the next request, no restart.
+  Header actors must match the token scope; unknown/expired/revoked tokens
+  share one 401 with no identity oracle, and every denial lands in
+  `audit_log` as `auth.rejected` with token ids or hash fingerprints only.
+  TLS terminates from `LABRYS_TLS_CERT_FILE`/`LABRYS_TLS_KEY_FILE`; plain
+  HTTP serves loopback only unless `LABRYS_ALLOW_PLAIN_HTTP=1` marks a
+  disposable environment. Per-IP rate limiting defaults to 120 req/min
+  (`LABRYS_API_RATE_LIMIT_PER_MINUTE`).
 - Runtime tiers: Tier 0 generic Dockerfile; Tier 1 language detection;
   Tier 2 framework layout. Tier 3 remains roadmap scope.
 - Dispatcher selection: the daemon probes `LABRYS_DOCKER_BIN` under

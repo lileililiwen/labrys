@@ -76,6 +76,34 @@ impl ControlPlaneClient {
         API_VERSION
     }
 
+    /// Trusts an extra PEM-encoded CA (e.g. a locally issued TLS cert for
+    /// staged environments) in addition to the platform roots. Rebuilds the
+    /// underlying HTTP client; the URL, token, actor, and trace are kept.
+    pub fn with_root_cert(mut self, ca_pem: &str) -> Result<Self, String> {
+        use std::io::BufReader;
+        let mut reader = BufReader::new(ca_pem.as_bytes());
+        let certs: Vec<reqwest::Certificate> = rustls_pemfile::certs(&mut reader)
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| format!("TLS CA is not valid PEM: {e}"))?
+            .into_iter()
+            .map(|der| {
+                reqwest::Certificate::from_der(&der)
+                    .map_err(|e| format!("TLS CA certificate rejected: {e}"))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        if certs.is_empty() {
+            return Err("TLS CA holds no certificates".to_string());
+        }
+        let mut builder = reqwest::Client::builder();
+        for cert in certs {
+            builder = builder.add_root_certificate(cert);
+        }
+        self.http = builder
+            .build()
+            .map_err(|e| format!("cannot build HTTP client: {e}"))?;
+        Ok(self)
+    }
+
     fn headers(&self, idempotency_key: Option<&str>) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(

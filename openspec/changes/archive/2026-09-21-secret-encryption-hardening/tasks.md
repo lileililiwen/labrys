@@ -15,7 +15,7 @@
   compile-only work `SKELETON_READY`. (Landed directly as implemented code:
   `SECRET_ENVELOPE_VERSION = 1` ChaCha20-Poly1305 envelopes with per-seal
   random nonces plus `SECRET_ENVELOPE_LEGACY_XOR = 0` read path; known
-  plaintexts `s3cr3t-db-value`/`sk-live-9f2e` swept through event, log,
+  plaintexts `s3cr3t-db-value`/`test-api-key-9f2e` swept through event, log,
   evidence, API, and dashboard payloads; no skeleton-only state.)
 - [x] Confirm proposal, design, and spec agree on envelope versioning and
   the values-never-in-audit invariant. (Readers dispatch on `cipher_version`;

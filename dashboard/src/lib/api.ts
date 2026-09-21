@@ -97,6 +97,15 @@ async function readEnvelope<T>(
   } catch (error) {
     throw new Error(`response from ${path} is not JSON: ${String(error)}`);
   }
+  // Authentication/authorization failures are actionable exceptions, not
+  // silent envelopes: the server recovery names the token/actor fix.
+  if (response.status === 401 || response.status === 403 || response.status === 429) {
+    const recovery =
+      typeof body.recovery === "string" && body.recovery.trim()
+        ? body.recovery
+        : "check the dashboard API token and actor, then retry";
+    throw new Error(`API ${response.status} from ${path}: ${recovery}`);
+  }
   return body;
 }
 

@@ -19,9 +19,12 @@ use labrys_control_plane::{
 /// `LABRYS_RUNTIME_MODE=docker` with an unreachable runtime fails startup
 /// fast instead of starting blocked.
 ///
-/// When `LABRYS_API_ADDR` is set (and `LABRYS_API_TOKEN` holds a valid
-/// token), the process also serves the authenticated control-plane API on
-/// that address; otherwise it runs workers only.
+/// When `LABRYS_API_ADDR` is set, the process also serves the authenticated
+/// control-plane API on that address (multi-token `LABRYS_API_TOKENS(_FILE)`
+/// or single-token `LABRYS_API_TOKEN` bootstrap with a startup warning;
+/// SIGHUP reloads tokens without restart; TLS via `LABRYS_TLS_CERT_FILE` /
+/// `LABRYS_TLS_KEY_FILE`, plain HTTP loopback-only unless
+/// `LABRYS_ALLOW_PLAIN_HTTP=1`); otherwise it runs workers only.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env()?;
@@ -76,11 +79,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api = match std::env::var("LABRYS_API_ADDR") {
         Ok(_) => {
             let api_config = ApiConfig::from_env()?;
-            let state = ApiState::new(pool.clone(), api_config.token.clone());
-            let listener = tokio::net::TcpListener::bind(api_config.bind_addr).await?;
-            println!("control-plane API listening on {}", api_config.bind_addr);
+            println!("{}", api_config.auth_summary());
+            let state =
+                ApiState::with_token_store(pool.clone(), api_config.tokens.clone(), Vec::new());
+            // Rotation without restart: SIGHUP re-reads process
+            // configuration into the live token set.
+            #[cfg(unix)]
+            {
+                let tokens = api_config.tokens.clone();
+                tokio::spawn(async move {
+                    let mut sighup = match tokio::signal::unix::signal(
+                        tokio::signal::unix::SignalKind::hangup(),
+                    ) {
+                        Ok(stream) => stream,
+                        Err(_) => return,
+                    };
+                    loop {
+                        sighup.recv().await;
+                        match tokens.reload(|key| std::env::var(key).ok()) {
+                            Ok(count) => println!("API tokens reloaded: {count} record(s)"),
+                            Err(e) => eprintln!("API token reload failed, keeping live set: {e}"),
+                        }
+                    }
+                });
+            }
+            let bind_addr = api_config.bind_addr;
+            let tls = api_config.tls.is_some();
+            println!(
+                "control-plane API listening on {bind_addr}{}",
+                if tls { " (TLS)" } else { "" }
+            );
             Some(tokio::spawn(async move {
-                axum::serve(listener, labrys_control_plane::api_router(state)).await
+                labrys_control_plane::serve_api(&api_config, state).await
             }))
         }
         Err(_) => None,

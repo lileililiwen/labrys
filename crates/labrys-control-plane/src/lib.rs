@@ -34,6 +34,7 @@
 //!   `scripts/`, and `docs/release.md`.
 
 pub mod api;
+pub mod auth;
 pub mod client;
 pub mod config;
 pub mod db;
@@ -53,7 +54,11 @@ pub mod storage_provider;
 pub mod tls_dns;
 pub mod worker;
 
-pub use api::{router as api_router, ApiConfig, ApiState, API_VERSION};
+pub use api::{router as api_router, serve_api, ApiConfig, ApiState, API_VERSION};
+pub use auth::{
+    bind_policy, token_fingerprint, AuthDenial, AuthDenyReason, AuthenticatedToken, BindPolicy,
+    RateLimiter, TlsConfig, TokenRecord, TokenScope, TokenStore, DEFAULT_RATE_LIMIT_PER_MINUTE,
+};
 pub use client::{exit_for, recovery_of, ControlPlaneClient, ExitCode};
 pub use config::{Config, RuntimeMode, DEFAULT_PREVIEW_TTL_SECS};
 pub use db::{connect, run_migrations, Pool};

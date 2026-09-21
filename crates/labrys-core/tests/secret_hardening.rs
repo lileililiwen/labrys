@@ -124,7 +124,7 @@ fn key_rotation_reseals_everything_and_kills_the_old_key() {
         .unwrap();
     let dev = InjectionGrant::new(app_id, "development", false);
     store
-        .put("api.key", "sk-live-two", &dev, "alice", now())
+        .put("api.key", "test-api-key-two", &dev, "alice", now())
         .unwrap();
     let stale_db = store.sealed("db.url").unwrap().clone();
 
@@ -142,7 +142,7 @@ fn key_rotation_reseals_everything_and_kills_the_old_key() {
         .unwrap();
     assert_eq!(rotated, 2);
     assert_eq!(store.inject(&grant, "db.url").unwrap(), "s3cr3t-one");
-    assert_eq!(store.inject(&dev, "api.key").unwrap(), "sk-live-two");
+    assert_eq!(store.inject(&dev, "api.key").unwrap(), "test-api-key-two");
 
     // The old key no longer opens the rotated envelopes.
     let old_store = SecretStore::new(MasterKey::new(vec![7u8; 32]).unwrap());
@@ -160,7 +160,7 @@ fn key_rotation_reseals_everything_and_kills_the_old_key() {
     for audit in rotates {
         let detail = audit.to_event_detail();
         assert!(!detail.contains("s3cr3t-one"));
-        assert!(!detail.contains("sk-live-two"));
+        assert!(!detail.contains("test-api-key-two"));
         assert_eq!(audit.approved_by.as_deref(), Some("bob"));
     }
 }
@@ -264,22 +264,22 @@ fn guards_keep_secret_values_out_of_every_payload_boundary() {
         .put("db.url", "s3cr3t-db-value", &grant, "alice", now())
         .unwrap();
     store
-        .put("api.key", "sk-live-9f2e", &grant, "alice", now())
+        .put("api.key", "test-api-key-9f2e", &grant, "alice", now())
         .unwrap();
 
     // Event, log, evidence, API-response, and dashboard payloads carrying
     // known plaintext are redacted to references only.
     let payloads = [
         "agent completed with postgres://db s3cr3t-db-value attached",
-        "build log line with header sk-live-9f2e against api",
+        "build log line with header test-api-key-9f2e against api",
         "evidence summary: connected via s3cr3t-db-value",
         "{\"database_url\": \"s3cr3t-db-value\"}",
-        "<dd>s3cr3t-db-value</dd><span>sk-live-9f2e</span>",
+        "<dd>s3cr3t-db-value</dd><span>test-api-key-9f2e</span>",
     ];
     for payload in payloads {
         let guarded = store.guard_text("boundary.payload", payload).unwrap();
         assert!(!guarded.contains("s3cr3t-db-value"), "{guarded}");
-        assert!(!guarded.contains("sk-live-9f2e"), "{guarded}");
+        assert!(!guarded.contains("test-api-key-9f2e"), "{guarded}");
         assert!(guarded.contains("[redacted:"), "{guarded}");
     }
 

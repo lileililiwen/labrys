@@ -16,10 +16,12 @@ use tokio::sync::{Mutex, MutexGuard};
 
 use labrys_control_plane::{
     run_migrations, ApiState, PgApplicationStore, PgDeploymentStore, PgEventStore, PgLogStore,
+    TokenStore,
 };
 use labrys_core::{ApplicationId, Plugin, PLUGIN_PROTOCOL_VERSION};
 
 const TOKEN: &str = "test-api-token-0123456789";
+const AGENT_TOKEN: &str = "test-agent-token-0123456789";
 const SECRET: &str = "api-cli-test-secret-do-not-log";
 
 fn database_url() -> Option<String> {
@@ -69,14 +71,25 @@ struct Server {
 
 impl Server {
     async fn start(pool: PgPool) -> Self {
-        let state = ApiState::new(pool, TOKEN.to_string());
+        // Human bootstrap token plus an agent-scoped token so handler-level
+        // agent boundaries stay reachable under actor-scope binding.
+        let tokens = TokenStore::from_lines(&format!(
+            "test-human:human:never:{TOKEN}\ntest-agent:agent:never:{AGENT_TOKEN}"
+        ))
+        .expect("test tokens");
+        let state = ApiState::with_token_store(pool, tokens, vec![SECRET.to_string()]);
         let app = labrys_control_plane::api_router(state);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind");
         let addr = listener.local_addr().expect("addr");
         tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("serve");
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await
+            .expect("serve");
         });
         Self {
             base_url: format!("http://{addr}"),
@@ -85,10 +98,14 @@ impl Server {
     }
 
     async fn get(&self, path: &str, actor: &str) -> (u16, Value) {
+        self.get_as(TOKEN, path, actor).await
+    }
+
+    async fn get_as(&self, token: &str, path: &str, actor: &str) -> (u16, Value) {
         let response = self
             .http
             .get(format!("{}{}", self.base_url, path))
-            .header("Authorization", format!("Bearer {TOKEN}"))
+            .header("Authorization", format!("Bearer {token}"))
             .header("x-labryst-actor", actor)
             .send()
             .await
@@ -98,10 +115,21 @@ impl Server {
     }
 
     async fn post(&self, path: &str, actor: &str, key: Option<&str>, body: &Value) -> (u16, Value) {
+        self.post_as(TOKEN, path, actor, key, body).await
+    }
+
+    async fn post_as(
+        &self,
+        token: &str,
+        path: &str,
+        actor: &str,
+        key: Option<&str>,
+        body: &Value,
+    ) -> (u16, Value) {
         let mut request = self
             .http
             .post(format!("{}{}", self.base_url, path))
-            .header("Authorization", format!("Bearer {TOKEN}"))
+            .header("Authorization", format!("Bearer {token}"))
             .header("x-labryst-actor", actor);
         if let Some(key) = key {
             request = request.header("Idempotency-Key", key);
@@ -291,7 +319,8 @@ async fn agent_production_deploy_is_rejected_before_provider_work() {
 
     // WHEN an agent calls the production deploy endpoint without approval ...
     let (status, body) = server
-        .post(
+        .post_as(
+            AGENT_TOKEN,
             &format!("/v1/applications/{app}/deploy"),
             "agent:sess-1:bot",
             Some("key-deploy-agent"),
@@ -415,7 +444,8 @@ async fn rollback_boundaries_hold_over_http() {
 
     // WHEN an agent invokes rollback without named human approval ...
     let (status, body) = server
-        .post(
+        .post_as(
+            AGENT_TOKEN,
             &format!("/v1/applications/{app}/rollback"),
             "agent:sess-1:bot",
             Some("key-rb-agent"),
@@ -674,7 +704,7 @@ async fn cli_doctor_and_agent_rollback_black_box() {
             "--api-url",
             &server.base_url,
             "--token",
-            TOKEN,
+            AGENT_TOKEN,
             "--actor",
             "agent:sess-1:bot",
             "rollback",

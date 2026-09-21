@@ -31,6 +31,10 @@ struct Cli {
     /// Trace id for request correlation.
     #[arg(long, env = "LABRYS_TRACE_ID")]
     trace_id: Option<String>,
+    /// PEM file with an extra CA to trust for TLS (staged environments
+    /// with locally issued certs).
+    #[arg(long, env = "LABRYS_TLS_CA")]
+    tls_ca: Option<String>,
     #[command(subcommand)]
     command: Command,
 }
@@ -213,6 +217,15 @@ async fn main() {
         Ok(client) => client,
         Err(message) => fail_usage(&message),
     };
+    if let Some(path) = &cli.tls_ca {
+        let pem = std::fs::read_to_string(path).unwrap_or_else(|e| {
+            fail_usage(&format!("cannot read --tls-ca '{path}': {e}"));
+        });
+        client = match client.with_root_cert(&pem) {
+            Ok(client) => client,
+            Err(message) => fail_usage(&message),
+        };
+    }
     let _ = &mut client;
     let result = run(cli.command, &client).await;
     let code = match result {
