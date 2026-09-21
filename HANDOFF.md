@@ -293,8 +293,31 @@ the binary links only `sqlx-postgres`).
 
 ## Current spec
 
-No active changes remain (`openspec list` is empty); the pointer is removed
-until a new change is authored.
+Four planning-only changes remain authored (not implemented); all tasks are
+unchecked planning artifacts:
+
+- `executable-dispatch-wiring` is implemented, locally verified, and ARCHIVED
+  as `openspec/changes/archive/2026-09-21-executable-dispatch-wiring`, with
+  the canonical spec promoted to
+  `openspec/specs/executable-dispatch-wiring/spec.md` (2 requirements).
+- `secret-encryption-hardening` (parallelizable, no dependencies)
+- `control-plane-api-hardening` (parallelizable, no dependencies)
+- `runtime-tier-depth-expansion` (parallelizable, no dependencies)
+- `real-provider-delivery-adapters` (depended on
+  `executable-dispatch-wiring`, now unblocked) — `current_spec:
+  real-provider-delivery-adapters`
+
+The pointer marks the next dependency-ready change; its dependency just
+landed. Implementation of it has not started.
+
+Verification evidence for `executable-dispatch-wiring` (commit `41f7e0d`):
+`cargo test --workspace` 268/268 against isolated PostgreSQL 16 + Docker,
+smoke-staging 17/17 with `runtime-delivery` passed for real,
+`collect-evidence.sh` 14 checks 0 failed (new `staging-execution` check),
+`driftwatchdog gate` 8/8, `openspec validate --all --strict` 26 items
+passed. One pre-existing latent bug fixed as a verification prerequisite:
+`scripts/secret-scan.sh` flagged its own `sk-live-` pattern line; the
+alternative is now spelled `sk-liv[e]-` (detection unchanged).
 
 `ci-packaging-and-release-evidence` is implemented, locally verified, and
 ARCHIVED as
