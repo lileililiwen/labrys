@@ -65,6 +65,12 @@ fn selection_config(mode: RuntimeMode) -> Config {
         docker_bin: std::path::PathBuf::from("/nonexistent-labrys-docker-binary"),
         workspace_root: std::env::temp_dir().join("labrys-dispatch-test"),
         preview_ttl_secs: 3_600,
+        provider_postgres_url: None,
+        provider_storage_root: std::env::temp_dir().join("labrys-dispatch-test-storage"),
+        provider_registry_endpoint: None,
+        provider_registry_username: None,
+        provider_registry_password: None,
+        provider_tls_dir: std::env::temp_dir().join("labrys-dispatch-test-tls"),
     }
 }
 
@@ -81,6 +87,12 @@ fn execution_config(db_url: &str) -> Config {
         docker_bin: std::path::PathBuf::from("docker"),
         workspace_root: std::env::temp_dir().join("labrys-dispatch-test"),
         preview_ttl_secs: 3_600,
+        provider_postgres_url: None,
+        provider_storage_root: std::env::temp_dir().join("labrys-dispatch-test-storage"),
+        provider_registry_endpoint: None,
+        provider_registry_username: None,
+        provider_registry_password: None,
+        provider_tls_dir: std::env::temp_dir().join("labrys-dispatch-test-tls"),
     }
 }
 

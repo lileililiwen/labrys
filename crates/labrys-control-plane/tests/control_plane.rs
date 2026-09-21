@@ -75,6 +75,12 @@ fn test_config(worker_id: &str) -> Config {
         docker_bin: std::path::PathBuf::from("docker"),
         workspace_root: std::env::temp_dir().join("labrys-test-workspaces"),
         preview_ttl_secs: 3_600,
+        provider_postgres_url: None,
+        provider_storage_root: std::env::temp_dir().join("labrys-test-provider-storage"),
+        provider_registry_endpoint: None,
+        provider_registry_username: None,
+        provider_registry_password: None,
+        provider_tls_dir: std::env::temp_dir().join("labrys-test-provider-tls"),
     }
 }
 

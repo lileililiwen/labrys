@@ -243,6 +243,21 @@ impl ProviderAdapter for LocalTestAdapter {
 pub trait OciRegistry: Send + Sync {
     async fn push(&self, artifact: &RegistryArtifact) -> Result<String>;
     async fn pull(&self, reference: &str) -> Result<String>;
+    /// Pushes artifact content (manifest + config bytes) and returns the
+    /// registry-verified digest. Content bytes are a proven missing operation
+    /// for genuine registry delivery: the default refuses explicitly instead
+    /// of simulating a push, and real clients implement it.
+    async fn push_content(
+        &self,
+        artifact: &RegistryArtifact,
+        manifest: &[u8],
+        config: &[u8],
+    ) -> Result<String> {
+        let _ = (artifact, manifest, config);
+        Err(ControlPlaneError::Registry(
+            "registry adapter does not accept content bytes".to_string(),
+        ))
+    }
 }
 
 /// Digest-verifying local test registry with artifact retention.
@@ -338,6 +353,13 @@ pub trait DomainDeliveryAdapter: Send + Sync {
         deployment: &Deployment,
         approval: &ExplicitApproval,
     ) -> Result<()>;
+    /// Persistable certificate evidence (fingerprint, subject, expiry) for a
+    /// hostname whose certificate is issued. Additive: the default carries
+    /// nothing and existing adapters are untouched.
+    async fn certificate_evidence(&self, hostname: &str) -> Option<String> {
+        let _ = hostname;
+        None
+    }
 }
 
 /// Local test domain delivery with scripted DNS/TLS states.
@@ -612,6 +634,10 @@ impl ProviderRuntime {
 
     /// Pushes one artifact through `registry`, persisting the digest evidence.
     /// A mismatch is recorded with recovery guidance and never promotes.
+    ///
+    /// Content-based delivery goes through [`ProviderRuntime::push_content`];
+    /// this path keeps the recorded-digest contract for adapters that verify
+    /// without content bytes.
     pub async fn push_artifact(
         &self,
         registry: &dyn OciRegistry,
@@ -619,8 +645,37 @@ impl ProviderRuntime {
         artifact: &RegistryArtifact,
         at: DateTime<Utc>,
     ) -> Result<RegistryDeliveryRecord> {
+        let reported = registry.push(artifact).await;
+        self.record_registry_push(application_id, artifact, reported, at)
+            .await
+    }
+
+    /// Pushes artifact content through `registry`, persisting the same digest
+    /// evidence rows as [`ProviderRuntime::push_artifact`]. A mismatch is
+    /// recorded with recovery guidance and never promotes.
+    pub async fn push_content(
+        &self,
+        registry: &dyn OciRegistry,
+        application_id: &str,
+        artifact: &RegistryArtifact,
+        manifest: &[u8],
+        config: &[u8],
+        at: DateTime<Utc>,
+    ) -> Result<RegistryDeliveryRecord> {
+        let reported = registry.push_content(artifact, manifest, config).await;
+        self.record_registry_push(application_id, artifact, reported, at)
+            .await
+    }
+
+    async fn record_registry_push(
+        &self,
+        application_id: &str,
+        artifact: &RegistryArtifact,
+        reported: Result<String>,
+        at: DateTime<Utc>,
+    ) -> Result<RegistryDeliveryRecord> {
         let id = format!("reg_{}", uuid::Uuid::new_v4().simple());
-        match registry.push(artifact).await {
+        match reported {
             Ok(reported) => {
                 let record = RegistryDeliveryRecord {
                     id,
@@ -688,6 +743,23 @@ impl ProviderRuntime {
         let attach = delivery_adapter
             .attach_traffic(delivery, domain, deployment, approval)
             .await;
+        // Persistable certificate evidence (fingerprint, subject, expiry)
+        // travels with the delivery record; key material never does.
+        let mut detail = delivery.detail.clone().unwrap_or_default();
+        if matches!(
+            delivery.tls,
+            CertificateState::Issued | CertificateState::Renewing
+        ) {
+            if let Some(evidence) = delivery_adapter
+                .certificate_evidence(&domain.hostname)
+                .await
+            {
+                if !detail.is_empty() {
+                    detail.push_str("; ");
+                }
+                detail.push_str(&redact::redact(&evidence, &self.secret_refs()));
+            }
+        }
         let record = DomainDeliveryRecord {
             id: format!("dom_{}", uuid::Uuid::new_v4().simple()),
             domain_id: delivery.domain_id.to_string(),
@@ -696,7 +768,7 @@ impl ProviderRuntime {
             dns: dns_name(&delivery.dns).to_string(),
             tls: tls_name(&delivery.tls).to_string(),
             traffic_attached: delivery.traffic_attached,
-            detail: delivery.detail.clone().unwrap_or_default(),
+            detail,
         };
         self.save_domain(&record, at).await?;
         attach?;

@@ -174,3 +174,97 @@ fn preview_ttl_is_bounded_to_a_minute_through_a_day() {
         );
     }
 }
+
+#[test]
+fn provider_fields_default_to_test_doubles_with_local_dirs() {
+    let config = config_from(&[("LABRYS_DATABASE_URL", "postgres://h/db")]).unwrap();
+    assert!(config.provider_postgres_url.is_none());
+    assert!(
+        config
+            .provider_storage_root
+            .to_string_lossy()
+            .ends_with("labrys-provider-storage"),
+        "{:?}",
+        config.provider_storage_root
+    );
+    assert!(config.provider_registry_endpoint.is_none());
+    assert!(config.provider_registry_username.is_none());
+    assert!(config.provider_registry_password.is_none());
+    assert!(
+        config
+            .provider_tls_dir
+            .to_string_lossy()
+            .ends_with("labrys-provider-tls"),
+        "{:?}",
+        config.provider_tls_dir
+    );
+    assert!(config.provider_secret_values().is_empty());
+    config.validate().unwrap();
+}
+
+#[test]
+fn provider_postgres_url_requires_a_postgres_scheme() {
+    let err = config_from(&[
+        ("LABRYS_DATABASE_URL", "postgres://h/db"),
+        ("LABRYS_PROVIDER_POSTGRES_URL", "mysql://h/db"),
+    ])
+    .unwrap_err();
+    assert!(matches!(err, ControlPlaneError::Config(_)), "{err:?}");
+    let config = config_from(&[
+        ("LABRYS_DATABASE_URL", "postgres://h/db"),
+        (
+            "LABRYS_PROVIDER_POSTGRES_URL",
+            "postgres://admin:pw1234@db-host:5433/app",
+        ),
+    ])
+    .unwrap();
+    assert_eq!(
+        config.provider_postgres_url.as_deref(),
+        Some("postgres://admin:pw1234@db-host:5433/app")
+    );
+    assert_eq!(config.provider_secret_values(), vec!["pw1234".to_string()]);
+}
+
+#[test]
+fn provider_registry_endpoint_must_be_http() {
+    let err = config_from(&[
+        ("LABRYS_DATABASE_URL", "postgres://h/db"),
+        ("LABRYS_PROVIDER_REGISTRY_ENDPOINT", "registry.local:5000"),
+    ])
+    .unwrap_err();
+    assert!(matches!(err, ControlPlaneError::Config(_)), "{err:?}");
+    let config = config_from(&[
+        ("LABRYS_DATABASE_URL", "postgres://h/db"),
+        (
+            "LABRYS_PROVIDER_REGISTRY_ENDPOINT",
+            "http://registry.local:5000/",
+        ),
+        ("LABRYS_PROVIDER_REGISTRY_USERNAME", "robot"),
+        ("LABRYS_PROVIDER_REGISTRY_PASSWORD", "token-secret"),
+    ])
+    .unwrap();
+    assert_eq!(
+        config.provider_registry_endpoint.as_deref(),
+        Some("http://registry.local:5000")
+    );
+    assert_eq!(
+        config.provider_secret_values(),
+        vec!["token-secret".to_string()]
+    );
+}
+
+#[test]
+fn empty_provider_dirs_are_rejected() {
+    let err = config_from(&[
+        ("LABRYS_DATABASE_URL", "postgres://h/db"),
+        ("LABRYS_PROVIDER_STORAGE_ROOT", "  "),
+    ])
+    .unwrap_err();
+    assert!(matches!(err, ControlPlaneError::Config(_)), "{err:?}");
+    let err = config_from(&[
+        ("LABRYS_DATABASE_URL", "postgres://h/db"),
+        ("LABRYS_PROVIDER_TLS_DIR", "  "),
+    ])
+    .unwrap_err();
+    assert!(matches!(err, ControlPlaneError::Config(_)), "{err:?}");
+}

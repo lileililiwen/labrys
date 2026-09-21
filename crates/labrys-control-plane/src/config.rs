@@ -81,6 +81,22 @@ pub struct Config {
     pub workspace_root: PathBuf,
     /// Preview time-to-live in seconds, bounded to one minute through one day.
     pub preview_ttl_secs: u64,
+    /// Managed-PostgreSQL admin connection URL (`LABRYS_PROVIDER_POSTGRES_URL`).
+    /// `None` keeps PostgreSQL provisioning on the local test double. The
+    /// value is process configuration only and is never logged or persisted.
+    pub provider_postgres_url: Option<String>,
+    /// Approved root for filesystem-backed storage buckets.
+    pub provider_storage_root: PathBuf,
+    /// OCI registry endpoint (e.g. `http://localhost:5000`) for real pushes.
+    /// `None` keeps registry delivery on the local test double.
+    pub provider_registry_endpoint: Option<String>,
+    /// Registry basic-auth username; only meaningful with an endpoint.
+    pub provider_registry_username: Option<String>,
+    /// Registry basic-auth password; process configuration only, redacted
+    /// before anything is persisted.
+    pub provider_registry_password: Option<String>,
+    /// Approved directory for locally issued TLS key/certificate files.
+    pub provider_tls_dir: PathBuf,
 }
 
 impl Config {
@@ -131,6 +147,40 @@ impl Config {
             "LABRYS_PREVIEW_TTL_SECONDS",
             DEFAULT_PREVIEW_TTL_SECS,
         )?;
+        let provider_postgres_url = match lookup("LABRYS_PROVIDER_POSTGRES_URL") {
+            Some(v) if !v.trim().is_empty() => Some(v.trim().to_string()),
+            _ => None,
+        };
+        let provider_storage_root = match lookup("LABRYS_PROVIDER_STORAGE_ROOT") {
+            Some(v) if !v.trim().is_empty() => PathBuf::from(v.trim()),
+            Some(_) => {
+                return Err(ControlPlaneError::Config(
+                    "LABRYS_PROVIDER_STORAGE_ROOT must not be empty".to_string(),
+                ));
+            }
+            None => default_provider_storage_root(),
+        };
+        let provider_registry_endpoint = match lookup("LABRYS_PROVIDER_REGISTRY_ENDPOINT") {
+            Some(v) if !v.trim().is_empty() => Some(v.trim().trim_end_matches('/').to_string()),
+            _ => None,
+        };
+        let provider_registry_username = match lookup("LABRYS_PROVIDER_REGISTRY_USERNAME") {
+            Some(v) if !v.trim().is_empty() => Some(v.trim().to_string()),
+            _ => None,
+        };
+        let provider_registry_password = match lookup("LABRYS_PROVIDER_REGISTRY_PASSWORD") {
+            Some(v) if !v.trim().is_empty() => Some(v),
+            _ => None,
+        };
+        let provider_tls_dir = match lookup("LABRYS_PROVIDER_TLS_DIR") {
+            Some(v) if !v.trim().is_empty() => PathBuf::from(v.trim()),
+            Some(_) => {
+                return Err(ControlPlaneError::Config(
+                    "LABRYS_PROVIDER_TLS_DIR must not be empty".to_string(),
+                ));
+            }
+            None => default_provider_tls_dir(),
+        };
         let config = Self {
             database_url,
             worker_id,
@@ -143,6 +193,12 @@ impl Config {
             docker_bin,
             workspace_root,
             preview_ttl_secs,
+            provider_postgres_url,
+            provider_storage_root,
+            provider_registry_endpoint,
+            provider_registry_username,
+            provider_registry_password,
+            provider_tls_dir,
         };
         config.validate()?;
         Ok(config)
@@ -156,14 +212,7 @@ impl Config {
                 "database url is required (LABRYS_DATABASE_URL/DATABASE_URL)".to_string(),
             ));
         }
-        if !(url.starts_with("postgres://")
-            || url.starts_with("postgresql://")
-            || url.starts_with("postgres+"))
-        {
-            return Err(ControlPlaneError::Config(
-                "database url must be a postgresql:// connection string".to_string(),
-            ));
-        }
+        require_postgres_url(url, "LABRYS_DATABASE_URL/DATABASE_URL")?;
         if self.worker_id.trim().is_empty() {
             return Err(ControlPlaneError::Config(
                 "worker id must not be empty".to_string(),
@@ -206,12 +255,82 @@ impl Config {
                 "preview ttl must be between {MIN_PREVIEW_TTL_SECS} and {MAX_PREVIEW_TTL_SECS} seconds"
             )));
         }
+        if let Some(url) = self.provider_postgres_url.as_deref() {
+            require_postgres_url(url, "LABRYS_PROVIDER_POSTGRES_URL")?;
+        }
+        if self.provider_storage_root.as_os_str().is_empty() {
+            return Err(ControlPlaneError::Config(
+                "provider storage root must not be empty".to_string(),
+            ));
+        }
+        if let Some(endpoint) = self.provider_registry_endpoint.as_deref() {
+            if !(endpoint.starts_with("http://") || endpoint.starts_with("https://")) {
+                return Err(ControlPlaneError::Config(
+                    "LABRYS_PROVIDER_REGISTRY_ENDPOINT must be an http(s) URL".to_string(),
+                ));
+            }
+        }
+        if self.provider_tls_dir.as_os_str().is_empty() {
+            return Err(ControlPlaneError::Config(
+                "provider tls dir must not be empty".to_string(),
+            ));
+        }
         Ok(())
+    }
+
+    /// Credential values carried by this configuration for redaction
+    /// registration. Callers register these with the provider runtime so a
+    /// provider failure can never persist them.
+    pub fn provider_secret_values(&self) -> Vec<String> {
+        let mut secrets = Vec::new();
+        if let Some(url) = self.provider_postgres_url.as_deref() {
+            if let Some(password) = url_password(url) {
+                secrets.push(password);
+            }
+        }
+        if let Some(password) = self.provider_registry_password.clone() {
+            secrets.push(password);
+        }
+        secrets.retain(|s| !s.trim().is_empty());
+        secrets
     }
 }
 
 fn default_workspace_root() -> PathBuf {
     std::env::temp_dir().join("labrys-workspaces")
+}
+
+fn default_provider_storage_root() -> PathBuf {
+    std::env::temp_dir().join("labrys-provider-storage")
+}
+
+fn default_provider_tls_dir() -> PathBuf {
+    std::env::temp_dir().join("labrys-provider-tls")
+}
+
+/// Extracts the password part of a `postgres://user:password@host/db` URL, if
+/// any, so it can be registered for redaction without storing the URL itself.
+fn url_password(url: &str) -> Option<String> {
+    let after_scheme = url.split("://").nth(1)?;
+    let authority = after_scheme.split('@').next()?;
+    let password = authority.split(':').nth(1)?;
+    if password.is_empty() {
+        None
+    } else {
+        Some(password.to_string())
+    }
+}
+
+fn require_postgres_url(url: &str, name: &str) -> Result<()> {
+    if !(url.starts_with("postgres://")
+        || url.starts_with("postgresql://")
+        || url.starts_with("postgres+"))
+    {
+        return Err(ControlPlaneError::Config(format!(
+            "{name} must be a postgresql:// connection string"
+        )));
+    }
+    Ok(())
 }
 
 fn default_worker_id() -> String {

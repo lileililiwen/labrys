@@ -29,7 +29,7 @@ API, and `.github/workflows/ci.yml` plus `scripts/` provide CI gates,
 disposable integration environments, versioned packaging, and tiered
 evidence collection (`docs/release.md`).
 
-This is verified by 268 workspace tests (integration enabled against isolated
+This is verified by 299 workspace tests (integration enabled against isolated
 PostgreSQL/Docker), 19 dashboard tests, the staging smoke, and the local
 Gate. It is **not** production delivery: `evidence/report.json` labels
 model, integration, and staging tiers separately, the daemon runs the

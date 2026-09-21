@@ -40,9 +40,13 @@ use labrys_core::{
 use crate::config::{Config, RuntimeMode};
 use crate::error::{ControlPlaneError, Result};
 use crate::observability::{PgEventStore, PgLogStore};
+use crate::oci_client::OciRegistryClient;
+use crate::postgres_provider::PostgresProvisioner;
 use crate::preview::{PreviewManager, WorkspaceRoot};
 use crate::providers::{LocalTestAdapter, ProviderJobDispatcher, ProviderRuntime};
 use crate::runtime::{ContainerExecutor, DockerExecutor, ExecutionIdentity, RuntimeAvailability};
+use crate::storage_provider::{FileStorageProvisioner, FsBucketBackend, ObjectStorageProvisioner};
+use crate::tls_dns::{OpensslTlsIssuer, RealDomainDelivery};
 use crate::worker::{DispatchOutcome, JobDispatcher};
 
 /// Actor attributed to dispatcher-stage events and logs.
@@ -99,6 +103,8 @@ pub struct ExecutableDispatcher {
     provider: ProviderJobDispatcher,
     executor: DockerExecutor,
     previews: PreviewManager<DockerExecutor>,
+    registry: Option<OciRegistryClient>,
+    domain: RealDomainDelivery,
     availability: RuntimeAvailability,
     preview_ttl_secs: u64,
     events: PgEventStore,
@@ -107,17 +113,60 @@ pub struct ExecutableDispatcher {
 }
 
 impl ExecutableDispatcher {
-    /// Builds the real dispatcher from process configuration. No probe runs
-    /// here; call [`select_dispatcher`] so startup reports the probed posture.
+    /// Builds the real dispatcher from process configuration. Provider
+    /// credentials come from the provider fields (`LABRYS_PROVIDER_*`); every
+    /// configured surface runs its real adapter, and every unconfigured one
+    /// keeps its local test double. No probe runs here; call
+    /// [`select_dispatcher`] so startup reports the probed posture.
     pub fn build(pool: PgPool, config: &Config) -> Result<Self> {
         let executor = DockerExecutor::new(config.docker_bin.clone());
-        let runtime = ProviderRuntime::new(pool.clone());
-        let provider = ProviderJobDispatcher::new(runtime)
-            .with_adapter(Arc::new(LocalTestAdapter::postgres_test()))
-            .with_adapter(Arc::new(LocalTestAdapter::auth_test()))
-            .with_adapter(Arc::new(LocalTestAdapter::file_storage_test()))
-            .with_adapter(Arc::new(LocalTestAdapter::object_storage_test()))
-            .with_adapter(Arc::new(LocalTestAdapter::generic_test()));
+        let mut secrets = config.provider_secret_values();
+        // Managed PostgreSQL when an admin URL is configured, test double
+        // otherwise. The admin password is registered for redaction.
+        let postgres: Arc<dyn crate::providers::ProviderAdapter> =
+            match config.provider_postgres_url.as_deref() {
+                Some(url) => {
+                    let provisioner = PostgresProvisioner::new(url)?;
+                    secrets.extend(provisioner.credential_secrets());
+                    Arc::new(provisioner)
+                }
+                None => Arc::new(LocalTestAdapter::postgres_test()),
+            };
+        // Filesystem buckets are real without further configuration: the
+        // backend is local directories plus process-memory keys.
+        let storage_backend = FsBucketBackend::new(config.provider_storage_root.clone())?;
+        let objectstore = ObjectStorageProvisioner::with_backend(storage_backend.clone());
+        let filestore = FileStorageProvisioner::with_backend(storage_backend);
+        let provider = ProviderJobDispatcher::new(ProviderRuntime::with_secrets(
+            pool.clone(),
+            secrets.clone(),
+        ))
+        .with_adapter(postgres)
+        .with_adapter(Arc::new(LocalTestAdapter::auth_test()))
+        .with_adapter(Arc::new(objectstore))
+        .with_adapter(Arc::new(filestore))
+        .with_adapter(Arc::new(LocalTestAdapter::generic_test()));
+        // OCI delivery when a registry endpoint is configured.
+        let registry = config
+            .provider_registry_endpoint
+            .clone()
+            .map(|endpoint| {
+                OciRegistryClient::new(
+                    endpoint,
+                    config.provider_registry_username.clone(),
+                    config.provider_registry_password.clone(),
+                )
+            })
+            .transpose()?;
+        if let Some(client) = registry.as_ref() {
+            secrets.extend(client.credential_secrets());
+        }
+        // DNS/TLS delivery is always constructed; issuance failures report
+        // their environment blocker at call time, never a pass.
+        let domain = RealDomainDelivery::new(OpensslTlsIssuer::new(
+            std::path::PathBuf::from("openssl"),
+            config.provider_tls_dir.clone(),
+        )?);
         let previews = PreviewManager::new(
             pool.clone(),
             Arc::new(executor.clone()),
@@ -128,13 +177,15 @@ impl ExecutableDispatcher {
             provider,
             executor,
             previews,
+            registry,
+            domain,
             availability: RuntimeAvailability::Unavailable {
                 reason: "runtime has not been probed yet".to_string(),
             },
             preview_ttl_secs: config.preview_ttl_secs,
             events: PgEventStore::new(pool.clone()),
             logs: PgLogStore::new(pool),
-            secrets: Vec::new(),
+            secrets,
         })
     }
 
@@ -165,6 +216,16 @@ impl ExecutableDispatcher {
     /// The health-gated preview lifecycle over the daemon executor.
     pub fn preview_manager(&self) -> &PreviewManager<DockerExecutor> {
         &self.previews
+    }
+
+    /// The OCI registry client, when a registry endpoint is configured.
+    pub fn registry_client(&self) -> Option<&OciRegistryClient> {
+        self.registry.as_ref()
+    }
+
+    /// The real DNS/TLS domain delivery over the daemon TLS directory.
+    pub fn domain_delivery(&self) -> &RealDomainDelivery {
+        &self.domain
     }
 
     /// The probed runtime posture carried by this dispatcher.

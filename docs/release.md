@@ -75,6 +75,14 @@ cosign):
   `LABRYS_PREVIEW_TTL_SECONDS` (60–86400 s). A reachable runtime runs the
   executable dispatcher; otherwise the daemon reports noop-blocked with
   recovery per execution stage and never simulates a pass.
-- Provider scope: local test doubles and approval-gated domain delivery.
-  Cloud deployment automation is out of scope until an explicit provider
-  change lands.
+- Provider scope: managed PostgreSQL provisioning (least-privilege
+  roles/databases from `LABRYS_PROVIDER_POSTGRES_URL`), filesystem-backed
+  object/file buckets with process-memory scoped keys
+  (`LABRYS_PROVIDER_STORAGE_ROOT`), OCI registry push with digest
+  verification (`LABRYS_PROVIDER_REGISTRY_ENDPOINT` plus optional basic
+  auth), and resolver-verified DNS with locally issued TLS
+  (`LABRYS_PROVIDER_TLS_DIR`) plus approval-gated traffic attachment.
+  Unconfigured surfaces keep their local test doubles. Provider credentials
+  live in process configuration and process memory only — never in the
+  database, logs, or evidence rows. Public ACME trust, authoritative DNS
+  management, and cloud deployment automation stay out of scope.
