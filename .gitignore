@@ -1,11 +1,17 @@
 /target/
 /dist/
+dist/
 /build/
+build/
 /node_modules/
 node_modules/
 /.next/
 .next/
 /coverage/
+coverage/
+/evidence/
+*.db
+*.sqlite3
 /.env
 /.env.*
 !.env.example

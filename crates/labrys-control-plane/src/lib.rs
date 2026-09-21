@@ -25,8 +25,10 @@
 //!   registry delivery, and DNS/TLS/traffic attachment run through the
 //!   [`providers`] adapters (local test doubles by default, real provider I/O
 //!   behind [`providers::ProviderAdapter`]/[`providers::OciRegistry`]/
-//!   [`providers::DomainDeliveryAdapter`], never a shell); the dashboard
-//!   remains a later change and is not introduced here.
+//!   [`providers::DomainDeliveryAdapter`], never a shell); the operator
+//!   console lives in `dashboard/` (Next.js over the versioned API) and CI,
+//!   packaging, and tiered evidence live in `.github/workflows/ci.yml`,
+//!   `scripts/`, and `docs/release.md`.
 
 pub mod api;
 pub mod client;

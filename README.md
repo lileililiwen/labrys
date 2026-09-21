@@ -11,21 +11,30 @@ previews, deployments, secrets, health, logs, verification, and rollback.
 
 ## Status
 
-The OpenSpec implementation queue through Phase 4 is complete: all ten changes
-are archived and their capability specs promoted under `openspec/specs/`.
-`crates/labrys-core` holds the deterministic control-plane model — Application
-and desired state, inspector and adoption, agent protocol and policy, runtime
-and sandbox, workspace and preview, capabilities/providers/bindings and sealed
-secrets, controllers with idempotent jobs and resource lifecycle, OCI
-deployment with health-gated promotion and explicit rollback boundaries,
-structured observability with an immutable audit chain and independent
-verification, and the CLI/dashboard/plugin-surface contracts.
+The OpenSpec implementation queue through Phase 7 is complete: all sixteen
+changes are archived and their capability specs promoted under
+`openspec/specs/`. `crates/labrys-core` holds the deterministic control-plane
+model — Application and desired state, inspector and adoption, agent protocol
+and policy, runtime and sandbox, workspace and preview,
+capabilities/providers/bindings and sealed secrets, controllers with
+idempotent jobs and resource lifecycle, OCI deployment with health-gated
+promotion and explicit rollback boundaries, structured observability with an
+immutable audit chain and independent verification, and the
+CLI/dashboard/plugin-surface contracts. `crates/labrys-control-plane` turns
+those contracts into a durable executable: PostgreSQL/SQLx persistence,
+versioned migrations, a recoverable worker, bounded Docker execution,
+provider/registry/domain delivery adapters, an authenticated Axum API, and
+the `labrys` CLI. `dashboard/` is the Next.js operator console over that
+API, and `.github/workflows/ci.yml` plus `scripts/` provide CI gates,
+disposable integration environments, versioned packaging, and tiered
+evidence collection (`docs/release.md`).
 
-This is contract and model delivery verified by 156 unit tests and the local
-Gate. It is **not** runtime delivery: no CI, deployment, or production evidence
-exists yet, and the real infrastructure boundaries (SQLx persistence, container
-execution, registry pushes, TLS issuance, the Rust job worker, the CLI binary,
-and the dashboard app) are still to be built on top of these plans.
+This is verified by 249 workspace tests (integration enabled against isolated
+PostgreSQL/Docker), 19 dashboard tests, the staging smoke, and the local
+Gate. It is **not** production delivery: `evidence/report.json` labels
+model, integration, and staging tiers separately, runtime delivery beyond
+the no-op dispatcher needs provider scope, and no production claim is made
+from CI.
 
 `openspec list` currently reports no active changes; the next step is a new
 OpenSpec change or a roadmap revision.

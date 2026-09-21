@@ -3,7 +3,7 @@
 This roadmap is the dependency order for the delegated implementation queue.
 Sequence lives here, not in numeric OpenSpec change names.
 
-All ten changes below are implemented, locally verified, and archived under
+All sixteen changes below are implemented, locally verified, and archived under
 `openspec/changes/archive/`; their capability specs are promoted to
 `openspec/specs/`. The queue is exhausted — extend this roadmap (or open a new
 change) before resuming implementation.
@@ -53,6 +53,45 @@ Expose the platform through CLI and dashboard surfaces and stabilize the
 process-boundary JSON-RPC extension model for agent, inspector, runtime,
 provider, binding, capability, and deployment plugins.
 
+### Phase 5 — Control-plane execution foundation — ARCHIVED
+
+11. `control-plane-persistence-and-worker`
+
+Replace in-memory-only runtime seams with durable PostgreSQL/SQLx state,
+transactional evidence persistence, and a recoverable controller worker. This
+is the prerequisite for executable API/CLI surfaces and real provider/runtime
+adapters.
+
+12. `container-execution-and-preview-runtime`
+
+Turn runtime and preview contracts into bounded Docker execution, isolated
+workspaces, health-gated previews, logs, and cleanup.
+
+13. `provider-registry-and-domain-adapters`
+
+Execute capability provisioning, OCI registry delivery, DNS/TLS issuance, and
+approval-gated domain traffic through provider adapters.
+
+### Phase 6 — Product entry points — ARCHIVED
+
+14. `control-plane-api-and-cli`
+
+Expose the persisted control plane through an authenticated Axum API and the
+stable `labrys` CLI with jobs, approvals, attribution, and safe responses.
+
+15. `dashboard-and-operator-console`
+
+Deliver the operator web console over the API with health, evidence,
+previews, approvals, logs, deployments, and accessible failure recovery.
+
+### Phase 7 — Release and runtime proof — ARCHIVED
+
+16. `ci-packaging-and-release-evidence`
+
+Add CI, packaging, migration checks, security gates, reproducible artifacts,
+and staged lifecycle evidence. This package does not convert local model tests
+into production claims without runtime proof.
+
 ## Version targets
 
 - `v0.1`: Phases 0–2, with the Run → Preview → Agent → Capability → Deploy loop
@@ -81,4 +120,3 @@ Multi-agent swarms, complex workflow builders, a self-trained model, complete
 Kubernetes, GPU cloud, an app marketplace, full app-store automation, complex
 billing, long-term vector memory, and dozens of deep framework adapters remain
 out of MVP scope.
-
