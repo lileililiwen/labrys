@@ -42,7 +42,13 @@ specs promoted to `openspec/specs/application-model/spec.md`,
 `openspec/specs/verification-and-observability/spec.md` (3 requirements),
 `openspec/specs/platform-surfaces/spec.md` (3 requirements),
 `openspec/specs/control-plane-persistence/spec.md` (3 requirements), and
-`openspec/specs/reconciliation-worker/spec.md` (3 requirements).
+`openspec/specs/reconciliation-worker/spec.md` (3 requirements), and
+`container-execution-and-preview-runtime` is implemented, locally verified,
+and ARCHIVED as
+`openspec/changes/archive/2026-09-21-container-execution-and-preview-runtime`,
+with canonical specs promoted to
+`openspec/specs/container-runtime-execution/spec.md` (2 requirements) and
+`openspec/specs/preview-execution/spec.md` (1 requirement).
 The `labrys-core` crate now holds a deterministic `Inspector`
 (`crates/labrys-core/src/inspector.rs`): `INSPECTION_ORDER` (dockerfile →
 compose → manifest → framework_convention → configuration → ci → source,
@@ -182,7 +188,28 @@ read/write boundaries (secrets, logs, and code changes read-only; deployments,
 capabilities, resources, and settings approval-gated; agents barred) with
 `render_dashboard` keeping agent and platform attribution separate so
 production health is computed only from platform evidence and secrets render
-as references only. A new `labrys-control-plane` crate
+as references only. A new `labrys-control-plane` execution layer (`crates/labrys-control-plane/src/runtime.rs`,
+`crates/labrys-control-plane/src/preview.rs`, migration
+`20260921000001_execution_and_previews.sql`) turns the runtime and preview
+contracts into bounded Docker execution without making the pure core depend on
+I/O: an injected `ContainerExecutor` trait with a real `DockerExecutor`
+(structured build/run/stop/inspect/log/health arguments, timeouts,
+cancellation, redacted diagnostics, no shell on path) and an
+`UnavailableExecutor` that reports a missing runtime as an environment
+blocker, never a simulated pass; `enforce_limits_before_schedule` plus
+`docker_run_args`/`EffectiveLimits` recording the effective CPU, memory,
+filesystem, network, capability, and PID posture; `probe_health` platform-only
+health semantics and `verify_production_artifact` refusing to promote a
+development process; `prospective_phase` mapping platform health to
+`ResourcePhase`; `WorkspaceRoot` isolated session workspaces,
+`PreviewManager` health-gated startup with expiry/revocation/cleanup and Expo
+transport metadata, and `PgExecutionStore`/`PgPreviewStore` persisting
+execution rows, preview state, platform-actor events, separated runtime logs,
+and health/build-test evidence with secret redaction. 216 tests pass (156
+pure-core + 60 control-plane: 12 lib + 8 config + 17 container-execution — 10
+pure unit, 3 PostgreSQL-backed, 4 Docker-backed — plus the prior 17
+control-plane and 6 redaction suites) against an isolated PostgreSQL 16
+instance and a real Docker 29.5.3 daemon. The `labrys-control-plane` crate
 (`crates/labrys-control-plane/`) turns those contracts into a durable,
 executable control plane without making the pure core depend on I/O: versioned
 PostgreSQL migrations (`migrations/`) for the application aggregate,
@@ -202,21 +229,27 @@ and expired-lease recovery; and a `Worker` that dispatches through an injected
 only from platform probes, redacts its failure diagnostics, and drains
 in-flight work on graceful shutdown; plus a `control-plane` executable that
 loads credentials from process configuration, runs migrations, and starts
-bounded workers. 187 tests pass (156 pure-core + 31 control-plane: 8 config in
-`crates/labrys-control-plane/tests/config.rs`, 6 redaction in
-`crates/labrys-control-plane/tests/redaction.rs`, and 17 PostgreSQL integration
+bounded workers. 216 tests pass (156 pure-core + 60 control-plane: 12 lib,
+8 config in `crates/labrys-control-plane/tests/config.rs`, 6 redaction in
+`crates/labrys-control-plane/tests/redaction.rs`, 17 PostgreSQL integration
 in `crates/labrys-control-plane/tests/control_plane.rs` covering restart
 durability, stale-generation conflict, environment isolation, transactional
 event rollback, redacted credential-bearing provider failure, concurrent
 audit-chain integrity, two-worker single claim, duplicate idempotency,
 lease-expiry recovery, agent-claim-never-ready, retry→dead-letter→requeue,
 pause/resume, graceful shutdown, evidence retention, usage totals, and an
-executable migration+recovery smoke). Container execution, image registries,
+executable migration+recovery smoke, plus 17 container-execution in
+`crates/labrys-control-plane/tests/container_execution.rs` covering
+unsupported-runtime rejection, limit enforcement, argument structure, health
+semantics, workspace isolation, revocation, redaction, persisted execution and
+preview rows, concurrent sessions, build timeout cancellation, unhealthy
+containers yielding no URL, and expiry revocation against an isolated
+PostgreSQL 16 instance and a real Docker daemon). Image registries,
 domains/TLS, the public HTTP API, the CLI binary, and the dashboard remain
 later changes. No CI, deployment, or production evidence exists yet. The
-Phase 5–7 queue (5 changes) is authored and planning-only; the crate now holds
-durable persistence and a recoverable worker but still no container execution or
-product entry points. The gate declaration is structurally valid and declares
+Phase 5–7 queue (4 active changes) is authored and planning-only; the crate
+now holds durable persistence, a recoverable worker, and bounded
+container/preview execution but still no product entry points. The gate declaration is structurally valid and declares
 commands for all 8 checks, and a fresh `driftwatchdog gate` run now PASSES all
 8 (the earlier security-adapter block is resolved: `cargo audit` exits 0). The
 only audit exception is a documented, scoped ignore of RUSTSEC-2023-0071
@@ -226,19 +259,45 @@ the binary links only `sqlx-postgres`).
 
 ## Current spec
 
-`current_spec: container-execution-and-preview-runtime`
+`current_spec: provider-registry-and-domain-adapters`
 
 The package is newly authored and remains planning-only. It has not been
 implemented, verified, or archived. It is the next Phase 5 change in `ROADMAP.md`
-order and turns the runtime and preview contracts into bounded Docker execution,
-isolated workspaces, health-gated previews, logs, and cleanup on top of the now
-durable control plane. The Phase 0–4 queue plus `control-plane-persistence-and-
-worker` remain implemented, locally verified, and archived.
+order and executes capability provisioning, OCI registry delivery, DNS/TLS
+issuance, and approval-gated domain traffic through provider adapters on top
+of the now durable control plane and bounded container execution. The Phase
+0–4 queue plus `control-plane-persistence-and-worker` and
+`container-execution-and-preview-runtime` remain implemented, locally
+verified, and archived.
 
 ## Verification evidence
 
-- `cli-dashboard-and-plugin-sdk` tasks.md — 5/5 checked from implementation
-  evidence.
+- `container-execution-and-preview-runtime` tasks.md — 13/13 checked from
+  implementation and integration evidence.
+- `openspec/changes/archive/2026-09-21-container-execution-and-preview-runtime` —
+  archived with specs promoted (`container-runtime-execution: create`, +2;
+  `preview-execution: create`, +1); canonical specs at
+  `openspec/specs/container-runtime-execution/spec.md` (2 requirements) and
+  `openspec/specs/preview-execution/spec.md` (1 requirement).
+- `node scripts/check-openspec-change-names.mjs` — PASS; all active names are valid.
+- `openspec list` — PASS; 4 active Phase 5–7 changes remain (this change archived).
+- `openspec validate --all --strict` — PASS; 18 items passed, 0 failed (14
+  promoted specs including the new `spec/container-runtime-execution` and
+  `spec/preview-execution`, plus the 4 active Phase 5–7 changes).
+- `git diff --check` — PASS; no whitespace errors reported.
+- `cargo build --workspace` — PASS; `cargo test --workspace` — PASS (216/216:
+  the 156 pure-core tests unchanged plus 60 control-plane tests — 12/12 lib,
+  8/8 in `crates/labrys-control-plane/tests/config.rs`, 6/6 in
+  `crates/labrys-control-plane/tests/redaction.rs`, 17/17 in
+  `crates/labrys-control-plane/tests/control_plane.rs`, and 17/17 in
+  `crates/labrys-control-plane/tests/container_execution.rs` against an
+  isolated PostgreSQL 16 instance and a real Docker 29.5.3 daemon).
+- PostgreSQL/Docker integration evidence: the control-plane and
+  container-execution tests require `LABRYS_DATABASE_URL`/`DATABASE_URL` (and a
+  Docker daemon for the 4 Docker-backed tests); when unset they skip and only
+  the pure unit/core tests run. They were run against a throwaway
+  `postgres:16-alpine` container plus the local Docker daemon; this is
+  infrastructure evidence, not production-deployment evidence.
 - `openspec/changes/archive/2026-09-20-cli-dashboard-and-plugin-sdk` — archived
   with specs promoted (`platform-surfaces: create`, +3); canonical spec at
   `openspec/specs/platform-surfaces/spec.md` (3 requirements).
@@ -273,9 +332,9 @@ worker` remain implemented, locally verified, and archived.
 - `openspec/changes/archive/2026-09-20-control-plane-persistence-and-worker` —
   archived with specs promoted (`control-plane-persistence: create`, +3;
   `reconciliation-worker: create`, +3).
-- Deferred to later changes and NOT introduced here: container execution, image
-  registries, DNS/TLS issuance, external provider implementations, the public
-  HTTP API, the `labrys` CLI binary, and the operator dashboard.
+- Deferred to later changes and NOT introduced here: image registries,
+  DNS/TLS issuance, external provider implementations, the public HTTP API,
+  the `labrys` CLI binary, and the operator dashboard.
 - Prior history: foundation/runtime archived with one non-blocking proposal
   warning (missing Why/What Changes headers). Gate `notes`/`BLOCKED` schema fix
   and `driftwatchdog init` recorded in an earlier handoff revision.
