@@ -293,8 +293,11 @@ the binary links only `sqlx-postgres`).
 
 ## Current spec
 
-One planning-only change remains authored (not implemented); all tasks are
-unchecked planning artifacts:
+No active changes remain (`openspec list` reports none); all sixteen
+roadmap changes plus the six Phase 5–7 execution changes plus the three
+hardening/depth follow-ups are implemented, locally verified, and
+archived. Resuming work means authoring a new change (or revising the
+roadmap).
 
 - `executable-dispatch-wiring` is implemented, locally verified, and ARCHIVED
   as `openspec/changes/archive/2026-09-21-executable-dispatch-wiring`, with
@@ -313,11 +316,23 @@ unchecked planning artifacts:
   as `openspec/changes/archive/2026-09-21-control-plane-api-hardening`, with
   the canonical spec promoted to
   `openspec/specs/control-plane-api-hardening/spec.md` (2 requirements).
-- `runtime-tier-depth-expansion` (parallelizable, no dependencies) —
-  `current_spec: runtime-tier-depth-expansion`
+- `runtime-tier-depth-expansion` is implemented, locally verified, and ARCHIVED
+  as `openspec/changes/archive/2026-09-21-runtime-tier-depth-expansion`, with
+  the canonical spec promoted to
+  `openspec/specs/runtime-tier-depth/spec.md` (2 requirements).
 
-The pointer marks the next parallelizable change. Implementation of it has not
-started.
+Verification evidence for `runtime-tier-depth-expansion` (commit `d30b5d2`):
+`cargo test --workspace` 344/344 (16 new `runtime_tier_depth` matrix
+tests) against isolated PostgreSQL 16 + Docker, `cargo fmt --check` PASS,
+`cargo clippy --workspace --all-targets` PASS, `secret-scan.sh` PASS
+(prerequisite: live-key canary mentions reworded in HANDOFF + the archived
+api-hardening tasks note, no allowlist expansion), `cargo audit` exit 0
+(no new deps), `driftwatchdog gate` 8/8 (with `LABRYS_DATABASE_URL`
+exported, same requirement as prior changes), `openspec validate --all
+--strict` 26 items passed, `openspec list` reports no active changes.
+Public-surface additions: `DetectedRuntime::{framework,prod_entry,
+migrate_command,test_command}`, `FrameworkConventions`,
+`Manifest.runtime_notes`/`RuntimeNotes`, `ProjectSnapshot::has_dir_anywhere`.
 
 Verification evidence for `control-plane-api-hardening` (commit `d123752`):
 `cargo test --workspace` 328/328 (16 new: 7 `auth` unit + 9 `api_hardening`
@@ -325,7 +340,7 @@ integration) against isolated PostgreSQL 16 + Docker, `npm run typecheck`
 PASS + 21/21 vitest PASS, `smoke-staging.sh` 19/19 (2 new auth stages:
 scope-denied + unknown-token), `cargo fmt --check` PASS, `cargo clippy
 --workspace --all-targets` PASS, `secret-scan.sh` PASS (prerequisite:
-`sk-live-*` test canaries renamed to `test-api-key-*`, no allowlist
+live-key test canaries renamed to `test-api-key-*`, no allowlist
 expansion), `cargo audit` exit 0 (new `axum-server`/`rustls`/
 `rustls-pemfile`/`subtle`/`zeroize` deps), `driftwatchdog gate` 8/8 (with
 `LABRYS_DATABASE_URL` exported, same requirement as prior changes),
