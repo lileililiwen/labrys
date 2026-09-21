@@ -63,7 +63,12 @@ and `openspec/specs/labrys-cli/spec.md` (2 requirements), and
 ARCHIVED as
 `openspec/changes/archive/2026-09-21-dashboard-and-operator-console`, with
 canonical spec promoted to `openspec/specs/operator-dashboard/spec.md` (3
-requirements).
+requirements), and `ci-packaging-and-release-evidence` is implemented,
+locally verified, and ARCHIVED as
+`openspec/changes/archive/2026-09-21-ci-packaging-and-release-evidence`,
+with canonical specs promoted to
+`openspec/specs/continuous-integration-and-gates/spec.md` (2 requirements)
+and `openspec/specs/release-packaging-and-evidence/spec.md` (2 requirements).
 The `labrys-core` crate now holds a deterministic `Inspector`
 (`crates/labrys-core/src/inspector.rs`): `INSPECTION_ORDER` (dockerfile →
 compose → manifest → framework_convention → configuration → ci → source,
@@ -288,7 +293,29 @@ the binary links only `sqlx-postgres`).
 
 ## Current spec
 
-`current_spec: ci-packaging-and-release-evidence`
+No active changes remain (`openspec list` is empty); the pointer is removed
+until a new change is authored.
+
+`ci-packaging-and-release-evidence` is implemented, locally verified, and
+ARCHIVED as
+`openspec/changes/archive/2026-09-21-ci-packaging-and-release-evidence`,
+with canonical specs promoted to
+`openspec/specs/continuous-integration-and-gates/spec.md` (2 requirements)
+and `openspec/specs/release-packaging-and-evidence/spec.md` (2
+requirements). CI (`.github/workflows/ci.yml`) runs dependency-ordered
+static, rust+PostgreSQL-service, dashboard-build, security, and
+package-and-evidence jobs; `compose.test.yml` gives a disposable local
+postgres:16; `scripts/` holds the secret scan, migration check (6/6 applied,
+schema 20260922000001), versioned packaging (binaries, dashboard bundle,
+SHA256SUMS, release manifest, lockfile SBOM, cosign-or-UNSIGNED), staging
+smoke (10/10 stages; runtime-delivery honestly blocked on the no-op
+dispatcher), and tiered evidence collection (13 checks, 0 failed;
+production-proof always blocked). `docs/release.md` defines the evidence
+vocabulary and release/rollback/incident/blocked procedures.
+`cargo test --workspace` passes (249/249, integration enabled) and
+`driftwatchdog gate` passes 8/8. All roadmap phases are implemented,
+locally verified, and archived; resuming work means authoring a new change
+(or revising the roadmap).
 
 `dashboard-and-operator-console` is implemented, locally verified, and
 ARCHIVED as
@@ -303,12 +330,40 @@ blocks rollback until warning acknowledgement plus scope confirmation plus
 named approver, and never renders secret values. `npm run typecheck` passes,
 19/19 vitest tests pass, `npm run build` prerenders the production bundle,
 `cargo test --workspace` passes (249/249), and `driftwatchdog gate` passes
-8/8. `ci-packaging-and-release-evidence` is newly authored and remains
-planning-only. It has not been implemented, verified, or archived. It is the
-next Phase 7 change in `ROADMAP.md` order and delivers CI, packaging,
-migration checks, security gates, and release evidence. The Phase 0–6 queue
-plus `provider-registry-and-domain-adapters` and `control-plane-api-and-cli`
-remain implemented, locally verified, and archived.
+8/8.
+
+## Verification evidence
+
+- `ci-packaging-and-release-evidence` tasks.md — 12/12 checked from
+  implementation and integration evidence.
+- `openspec/changes/archive/2026-09-21-ci-packaging-and-release-evidence` —
+  archived with specs promoted (`continuous-integration-and-gates: create`,
+  +2; `release-packaging-and-evidence: create`, +2); canonical specs at
+  `openspec/specs/continuous-integration-and-gates/spec.md` and
+  `openspec/specs/release-packaging-and-evidence/spec.md`.
+- `bash scripts/secret-scan.sh` — PASS (only allowlisted fake fixtures).
+- `bash scripts/verify-migrations.sh` — PASS (6/6 applied, schema version
+  20260922000001) against an isolated scratch database.
+- `bash scripts/package.sh --out` — PASS (release binaries, dashboard
+  bundle, 83 files checksummed, release manifest with source rev / protocol
+  / migration / tier scope, 267-package lockfile SBOM, UNSIGNED marker in
+  place of unavailable cosign).
+- `bash scripts/smoke-staging.sh --out` — PASS (10/10 stages: version,
+  import, inspect, health-never-healthy, doctor, agent-deploy-denied,
+  rollback-without-approval-denied, logs, negotiate, daemon-present;
+  runtime-delivery recorded blocked, never passed).
+- `bash scripts/collect-evidence.sh --out` — PASS (13 checks, 0 failed, 0
+  blocked locally; production-proof recorded blocked by policy).
+- `node scripts/check-openspec-change-names.mjs` — PASS; `openspec list` —
+  PASS (no active changes remain).
+- `openspec validate --all --strict` — PASS (21 items: 21 promoted specs).
+- `git diff --check` — PASS; `cargo fmt --all --check` — PASS;
+  `cargo clippy --workspace --all-targets -- -D warnings` — PASS.
+- `cargo build --workspace` — PASS; `cargo test --workspace` — PASS
+  (249/249 with PostgreSQL integration enabled against an isolated
+  PostgreSQL 16 instance and a real Docker daemon).
+- `cargo audit` — PASS (exit 0).
+- Local Gate (`driftwatchdog gate` in repo root) — PASS (8/8 checks).
 
 `control-plane-api-and-cli` is implemented, locally verified, and ARCHIVED as
 `openspec/changes/archive/2026-09-21-control-plane-api-and-cli`, with canonical
