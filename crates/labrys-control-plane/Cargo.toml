@@ -20,7 +20,7 @@ sqlx = { version = "0.8", default-features = false, features = [
     "migrate",
 ] }
 thiserror = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "process", "fs", "net", "io-util"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 
 [dev-dependencies]

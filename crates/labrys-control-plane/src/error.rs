@@ -40,6 +40,15 @@ pub enum ControlPlaneError {
     #[error("secret value rejected before persistence in field '{0}'")]
     SecretLeak(String),
 
+    #[error("container execution error: {0}")]
+    Execution(String),
+
+    #[error("runtime unavailable: {0}")]
+    Unavailable(String),
+
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+
     #[error("worker is shutting down: {0}")]
     Shutdown(String),
 }
