@@ -1,0 +1,137 @@
+# Labrys CI: dependency-ordered gates with isolated services.
+#
+# Evidence vocabulary (see docs/release.md):
+# - model-only: pure-core unit tests, no I/O.
+# - integration: PostgreSQL-backed and Docker-backed tests on isolated services.
+# - staging: disposable end-to-end smoke (import -> ... -> observe).
+# - production: never claimed from CI; requires runtime proof outside CI.
+# Unavailable infrastructure is reported BLOCKED with diagnostics, never passed.
+
+name: ci
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: "true"
+
+jobs:
+  static:
+    name: static-gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: openspec change names
+        run: node scripts/check-openspec-change-names.mjs
+      - name: openspec strict validation
+        run: npx --yes openspec validate --all --strict
+      - name: format
+        run: cargo fmt --all --check
+      - name: lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: secret scan
+        run: bash scripts/secret-scan.sh
+      - name: dashboard typecheck and tests
+        run: npm ci --prefix dashboard && npm run typecheck --prefix dashboard && npm test --prefix dashboard
+
+  rust:
+    name: rust-build-and-test
+    runs-on: ubuntu-latest
+    needs: static
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: labrys-ci-pw
+          POSTGRES_DB: labrys_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      LABRYS_DATABASE_URL: postgresql://postgres:labrys-ci-pw@localhost:5432/labrys_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build
+        run: cargo build --workspace
+      - name: migration check
+        run: bash scripts/verify-migrations.sh
+      - name: tests (isolated PostgreSQL + Docker)
+        run: cargo test --workspace
+
+  dashboard-build:
+    name: dashboard-build
+    runs-on: ubuntu-latest
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci --prefix dashboard
+      - run: npm run build --prefix dashboard
+
+  security:
+    name: security-audit
+    runs-on: ubuntu-latest
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  package:
+    name: package-and-evidence
+    runs-on: ubuntu-latest
+    needs: [rust, dashboard-build, security]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: labrys-ci-pw
+          POSTGRES_DB: labrys_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      LABRYS_DATABASE_URL: postgresql://postgres:labrys-ci-pw@localhost:5432/labrys_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: package release artifacts
+        run: bash scripts/package.sh --out dist
+      - name: collect evidence report
+        run: bash scripts/collect-evidence.sh --out evidence
+      - name: staging smoke (disposable environment)
+        run: bash scripts/smoke-staging.sh --out evidence
+      - name: upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: labrys-release
+          path: |
+            dist/
+            evidence/

@@ -1,0 +1,29 @@
+# Disposable integration environment for local runs.
+#
+# Usage:
+#   docker compose -f compose.test.yml up -d
+#   LABRYS_DATABASE_URL=postgresql://postgres:labrys-test-pw@localhost:5433/labrys_test \
+#     cargo test --workspace
+#   docker compose -f compose.test.yml down -v
+#
+# CI uses equivalent service containers (see .github/workflows/ci.yml).
+# Nothing here is production infrastructure.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: labrys-test-pw
+      POSTGRES_DB: labrys_test
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - labrys-test-pgdata:/var/lib/postgresql/data
+
+volumes:
+  labrys-test-pgdata:
