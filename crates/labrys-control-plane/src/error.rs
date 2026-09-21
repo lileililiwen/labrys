@@ -43,6 +43,15 @@ pub enum ControlPlaneError {
     #[error("container execution error: {0}")]
     Execution(String),
 
+    #[error("provider error: {0}")]
+    Provider(String),
+
+    #[error("registry error: {0}")]
+    Registry(String),
+
+    #[error("domain delivery error: {0}")]
+    Domain(String),
+
     #[error("runtime unavailable: {0}")]
     Unavailable(String),
 

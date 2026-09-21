@@ -17,10 +17,13 @@
 //!   when read back.
 //! - Container execution runs through the bounded [`runtime`] executor (real
 //!   Docker I/O behind [`runtime::ContainerExecutor`], never a shell) and
-//!   health-gated [`preview`] lifecycles; image registries, TLS issuance, the
-//!   public HTTP API, the CLI binary, and the dashboard remain later changes
-//!   and are not introduced here; other provider execution is still represented
-//!   only by injected traits.
+//!   health-gated [`preview`] lifecycles; capability provisioning, OCI
+//!   registry delivery, and DNS/TLS/traffic attachment run through the
+//!   [`providers`] adapters (local test doubles by default, real provider I/O
+//!   behind [`providers::ProviderAdapter`]/[`providers::OciRegistry`]/
+//!   [`providers::DomainDeliveryAdapter`], never a shell); the public HTTP API,
+//!   the CLI binary, and the dashboard remain later changes and are not
+//!   introduced here.
 
 pub mod config;
 pub mod db;
@@ -29,6 +32,7 @@ pub mod jobs;
 pub mod mapping;
 pub mod observability;
 pub mod preview;
+pub mod providers;
 pub mod redact;
 pub mod repos;
 pub mod runtime;
@@ -42,6 +46,11 @@ pub use observability::{PgAuditLog, PgEventStore, PgEvidenceStore, PgLogStore, P
 pub use preview::{
     ExecutionRecord, PgExecutionStore, PgPreviewStore, PreviewManager, PreviewRow, StartedPreview,
     WorkspaceRoot,
+};
+pub use providers::{
+    DomainDeliveryAdapter, DomainDeliveryRecord, InjectedFailure, LocalDomainDelivery,
+    LocalTestAdapter, LocalTestRegistry, OciRegistry, ProviderAdapter, ProviderExecution,
+    ProviderJobDispatcher, ProviderOperationRecord, ProviderRuntime, RegistryDeliveryRecord,
 };
 pub use repos::{PgApplicationStore, PgCapabilityStore, PgDeploymentStore, PgResourceStore};
 pub use runtime::{

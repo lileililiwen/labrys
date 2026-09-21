@@ -19,6 +19,9 @@
 //!   bindings, modes, and sealed secrets.
 //! - [`controller`]: `reconciliation` — controllers, idempotent jobs, resource
 //!   lifecycle, and platform-only health aggregation.
+//! - [`provider`]: `provider-registry-and-domain-adapters` — scoped provider
+//!   operations, approval-gated destructive actions, digest-verified OCI
+//!   delivery, and separately observable DNS/TLS/traffic attachment.
 //! - [`deployment`]: `deployment-platform` — first-class OCI deployments,
 //!   health-gated promotion, domains, and explicit rollback boundaries.
 //! - [`observability`]: `verification-and-observability` — attributable events,
@@ -45,6 +48,7 @@ pub mod manifest;
 pub mod observability;
 pub mod origin;
 pub mod plugin;
+pub mod provider;
 pub mod repository;
 pub mod runtime;
 pub mod state;
@@ -104,6 +108,13 @@ pub use plugin::{
     ExampleInspectorPlugin, ExampleRuntimePlugin, Handshake, Plugin, PluginFamily, PluginManifest,
     PluginProcess, PluginRegistry, PluginReport, PluginState, RpcError, RpcErrorCode, RpcRequest,
     RpcResponse, PLUGIN_PROTOCOL_VERSION,
+};
+pub use provider::{
+    gate_registry_push, note_agent_claim_ignored, plan_traffic_attachment, sanitize_failure,
+    verify_registry_digest, CertificateState, DnsState, DomainDelivery, ProviderAction,
+    ProviderKind, ProviderObservation, ProviderOperation, RegistryArtifact,
+    CERTIFICATE_FAILURE_RECOVERY, DIGEST_MISMATCH_RECOVERY, PROVIDER_CONTRACT_VERSION,
+    PROVIDER_FAILURE_RECOVERY,
 };
 pub use repository::{ApplicationRepository, InMemoryApplicationRepository};
 pub use runtime::{
