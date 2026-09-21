@@ -58,7 +58,12 @@ with canonical specs promoted to
 `control-plane-api-and-cli` is implemented, locally verified, and ARCHIVED as
 `openspec/changes/archive/2026-09-21-control-plane-api-and-cli`, with canonical
 specs promoted to `openspec/specs/control-plane-api/spec.md` (2 requirements)
-and `openspec/specs/labrys-cli/spec.md` (2 requirements).
+and `openspec/specs/labrys-cli/spec.md` (2 requirements), and
+`dashboard-and-operator-console` is implemented, locally verified, and
+ARCHIVED as
+`openspec/changes/archive/2026-09-21-dashboard-and-operator-console`, with
+canonical spec promoted to `openspec/specs/operator-dashboard/spec.md` (3
+requirements).
 The `labrys-core` crate now holds a deterministic `Inspector`
 (`crates/labrys-core/src/inspector.rs`): `INSPECTION_ORDER` (dockerfile →
 compose → manifest → framework_convention → configuration → ci → source,
@@ -283,7 +288,27 @@ the binary links only `sqlx-postgres`).
 
 ## Current spec
 
-`current_spec: dashboard-and-operator-console`
+`current_spec: ci-packaging-and-release-evidence`
+
+`dashboard-and-operator-console` is implemented, locally verified, and
+ARCHIVED as
+`openspec/changes/archive/2026-09-21-dashboard-and-operator-console`, with
+canonical spec promoted to `openspec/specs/operator-dashboard/spec.md` (3
+requirements). The `dashboard/` Next.js operator console
+(`src/lib/api.ts` typed v1 client, `src/lib/attribution.ts` platform-wins
+health, `src/lib/rollback.ts` database-data-warning gate,
+`src/lib/secrets.ts` reference-only boundary, `src/components/` accessible
+views, `src/app/` routes) distinguishes platform evidence from agent claims,
+blocks rollback until warning acknowledgement plus scope confirmation plus
+named approver, and never renders secret values. `npm run typecheck` passes,
+19/19 vitest tests pass, `npm run build` prerenders the production bundle,
+`cargo test --workspace` passes (249/249), and `driftwatchdog gate` passes
+8/8. `ci-packaging-and-release-evidence` is newly authored and remains
+planning-only. It has not been implemented, verified, or archived. It is the
+next Phase 7 change in `ROADMAP.md` order and delivers CI, packaging,
+migration checks, security gates, and release evidence. The Phase 0–6 queue
+plus `provider-registry-and-domain-adapters` and `control-plane-api-and-cli`
+remain implemented, locally verified, and archived.
 
 `control-plane-api-and-cli` is implemented, locally verified, and ARCHIVED as
 `openspec/changes/archive/2026-09-21-control-plane-api-and-cli`, with canonical
@@ -301,14 +326,37 @@ in-progress health. The distributable `labrys` CLI
 (`crates/labrys-control-plane/src/bin/labrys.rs` via clap plus the typed
 `ControlPlaneClient`) covers all 15 stable lifecycle commands with
 `init`/`dev` aliases, pretty JSON envelopes, recovery on stderr, and exit
-0/1/2 semantics. `dashboard-and-operator-console` is newly authored and
-remains planning-only. It has not been implemented, verified, or archived. It
-is the next Phase 6 change in `ROADMAP.md` order and delivers the operator
-web console over the API. The Phase 0–6 queue plus
-`provider-registry-and-domain-adapters` remain implemented, locally verified,
-and archived.
+0/1/2 semantics.
 
 ## Verification evidence
+
+- `dashboard-and-operator-console` tasks.md — 12/12 checked from
+  implementation and integration evidence.
+- `openspec/changes/archive/2026-09-21-dashboard-and-operator-console` —
+  archived with specs promoted (`operator-dashboard: create`, +3); canonical
+  spec at `openspec/specs/operator-dashboard/spec.md` (3 requirements).
+- `npm run typecheck` — PASS; `npm test` — PASS (19/19 vitest: attribution,
+  rollback approval boundary, secret references, dashboard view platform
+  truth, typed API-client contract).
+- `npm run build` — PASS; production bundle prerenders (`/` 1.07 kB, first
+  load 88.3 kB) with platform-failure-wins attribution, rollback warning
+  gate, and reference-only secrets.
+- `node scripts/check-openspec-change-names.mjs` — PASS; all active names are valid.
+- `openspec list` — PASS; 1 active Phase 7 change remains (this change archived).
+- `openspec validate --all --strict` — PASS; 20 items passed, 0 failed (19
+  promoted specs including the new `spec/operator-dashboard`, plus the 1
+  active Phase 7 change).
+- `git diff --check` — PASS; no whitespace errors reported.
+- `cargo fmt --all --check` — PASS; `cargo clippy --workspace --all-targets -- -D warnings` — PASS.
+- `cargo build --workspace` — PASS; `cargo test --workspace` — PASS
+  (249/249, 0 failed).
+- `cargo audit` — PASS (exit 0). `npm audit` notes scoped, non-blocking
+  build/dev-time findings (esbuild dev-server, next/postcss server paths
+  unused by the static bundle; Next.js kept at latest patched 14.x); see
+  `dashboard/README.md`.
+- Local Gate (`driftwatchdog gate` in repo root) — PASS (8/8 checks:
+  build, format, lint, openspec_change_names, openspec_strict_validation,
+  repository_integrity, security, tests).
 
 - `container-execution-and-preview-runtime` tasks.md — 13/13 checked from
   implementation and integration evidence.
