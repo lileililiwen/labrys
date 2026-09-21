@@ -1,14 +1,20 @@
 use std::sync::Arc;
 
-use labrys_control_plane::{connect, run_migrations, Config, NoopDispatcher, Worker};
+use labrys_control_plane::{
+    connect, run_migrations, ApiConfig, ApiState, Config, NoopDispatcher, Worker,
+};
 
 /// Control-plane process entry point.
 ///
 /// Loads database credentials and runtime settings from process configuration,
 /// runs embedded migrations explicitly, and starts the reconciliation workers.
-/// Provider/runtime execution is the safe no-op dispatcher until container
-/// execution lands in a later change, so this process never performs real
-/// runtime work.
+/// Provider/runtime execution is the safe no-op dispatcher until real
+/// execution is wired behind `JobDispatcher`, so this process never performs
+/// unrequested runtime work.
+///
+/// When `LABRYS_API_ADDR` is set (and `LABRYS_API_TOKEN` holds a valid
+/// token), the process also serves the authenticated control-plane API on
+/// that address; otherwise it runs workers only.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env()?;
@@ -39,6 +45,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.max_concurrency, config.lease_seconds
     );
 
+    // Optional API surface: opt-in via LABRYS_API_ADDR so existing
+    // worker-only deployments keep their exact behavior.
+    let api = match std::env::var("LABRYS_API_ADDR") {
+        Ok(_) => {
+            let api_config = ApiConfig::from_env()?;
+            let state = ApiState::new(pool.clone(), api_config.token.clone());
+            let listener = tokio::net::TcpListener::bind(api_config.bind_addr).await?;
+            println!("control-plane API listening on {}", api_config.bind_addr);
+            Some(tokio::spawn(async move {
+                axum::serve(listener, labrys_control_plane::api_router(state)).await
+            }))
+        }
+        Err(_) => None,
+    };
+
     shutdown_signal().await;
     println!("shutdown requested; draining in-flight work");
     for worker in &workers {
@@ -46,6 +67,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     for handle in handles {
         let _ = handle.await;
+    }
+    if let Some(api) = api {
+        api.abort();
     }
     println!("control plane stopped");
     Ok(())

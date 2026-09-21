@@ -245,6 +245,19 @@ impl PgJobQueue {
         job_from_row(&row)
     }
 
+    /// Latest job for one convergence target, newest first. Lets read paths
+    /// (health, job status) report the durable operation behind an accepted
+    /// mutation without claiming work the platform has not observed.
+    pub async fn latest_for_target(&self, target: &str) -> Result<Option<Job>> {
+        let row = sqlx::query(
+            "SELECT * FROM jobs WHERE target = $1 ORDER BY updated_at DESC, enqueued_at DESC LIMIT 1",
+        )
+        .bind(target)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|row| job_from_row(&row)).transpose()
+    }
+
     /// Jobs that exhausted their retry budget.
     pub async fn dead_letters(&self) -> Result<Vec<JobId>> {
         let rows = sqlx::query("SELECT id FROM jobs WHERE status = 'dead' ORDER BY updated_at")

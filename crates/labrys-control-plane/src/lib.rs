@@ -15,16 +15,21 @@
 //!   can never promote readiness.
 //! - Secret values are redacted and rejected *before* SQL execution, not only
 //!   when read back.
+//! - The executable API ([`api`]) and `labrys` CLI (typed [`client`] plus the
+//!   `labrys` binary) expose every lifecycle command over authenticated,
+//!   idempotent, attributable envelopes; handlers validate, enqueue, and
+//!   report rather than performing provider work inline.
 //! - Container execution runs through the bounded [`runtime`] executor (real
 //!   Docker I/O behind [`runtime::ContainerExecutor`], never a shell) and
 //!   health-gated [`preview`] lifecycles; capability provisioning, OCI
 //!   registry delivery, and DNS/TLS/traffic attachment run through the
 //!   [`providers`] adapters (local test doubles by default, real provider I/O
 //!   behind [`providers::ProviderAdapter`]/[`providers::OciRegistry`]/
-//!   [`providers::DomainDeliveryAdapter`], never a shell); the public HTTP API,
-//!   the CLI binary, and the dashboard remain later changes and are not
-//!   introduced here.
+//!   [`providers::DomainDeliveryAdapter`], never a shell); the dashboard
+//!   remains a later change and is not introduced here.
 
+pub mod api;
+pub mod client;
 pub mod config;
 pub mod db;
 pub mod error;
@@ -38,6 +43,8 @@ pub mod repos;
 pub mod runtime;
 pub mod worker;
 
+pub use api::{router as api_router, ApiConfig, ApiState, API_VERSION};
+pub use client::{exit_for, recovery_of, ControlPlaneClient, ExitCode};
 pub use config::Config;
 pub use db::{connect, run_migrations, Pool};
 pub use error::{ControlPlaneError, Result};
