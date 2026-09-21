@@ -293,7 +293,7 @@ the binary links only `sqlx-postgres`).
 
 ## Current spec
 
-Three planning-only changes remain authored (not implemented); all tasks are
+Two planning-only changes remain authored (not implemented); all tasks are
 unchecked planning artifacts:
 
 - `executable-dispatch-wiring` is implemented, locally verified, and ARCHIVED
@@ -305,14 +305,28 @@ unchecked planning artifacts:
   `openspec/changes/archive/2026-09-21-real-provider-delivery-adapters`,
   with the canonical spec promoted to
   `openspec/specs/real-provider-delivery/spec.md` (2 requirements).
-- `secret-encryption-hardening` (parallelizable, no dependencies) —
-  `current_spec: secret-encryption-hardening`
-- `control-plane-api-hardening` (parallelizable, no dependencies)
+- `secret-encryption-hardening` is implemented, locally verified, and ARCHIVED
+  as `openspec/changes/archive/2026-09-21-secret-encryption-hardening`, with
+  the canonical spec promoted to
+  `openspec/specs/secret-encryption-hardening/spec.md` (2 requirements).
+- `control-plane-api-hardening` (parallelizable, no dependencies) —
+  `current_spec: control-plane-api-hardening`
 - `runtime-tier-depth-expansion` (parallelizable, no dependencies)
 
-The pointer marks the next parallelizable change; the real provider adapters
-consume its hardened store but do not block it. Implementation of it has not
+The pointer marks the next parallelizable change. Implementation of it has not
 started.
+
+Verification evidence for `secret-encryption-hardening` (commit `1100cca`):
+`cargo test --workspace` 312/312 (13 new: 4 in-module cipher unit + 9
+`secret_hardening` integration) against isolated PostgreSQL 16 + Docker,
+`cargo fmt --check` PASS, `cargo clippy --workspace --all-targets` PASS,
+`secret-scan.sh` PASS, `cargo audit` exit 0 (new `chacha20poly1305`/`rand`/
+`sha2`/`zeroize` deps), `driftwatchdog gate` 8/8 (with `LABRYS_DATABASE_URL`
+exported for infra-gated suites, same requirement as prior changes),
+`openspec validate --all --strict` 26 items passed. Public-surface change:
+`SecretStore::rotate` now takes `&ExplicitApproval` (production scopes denied
+before any re-seal); new `rotate_key`, `open_envelope`, `guard_text`,
+`MasterKey::{from_env,from_file,generate}`, and `SECRET_ENVELOPE_VERSION`.
 
 Verification evidence for `real-provider-delivery-adapters` (commit
 `85c7c57`): `cargo test --workspace` 299/299 against isolated PostgreSQL 16
