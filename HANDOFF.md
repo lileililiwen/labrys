@@ -48,7 +48,13 @@ and ARCHIVED as
 `openspec/changes/archive/2026-09-21-container-execution-and-preview-runtime`,
 with canonical specs promoted to
 `openspec/specs/container-runtime-execution/spec.md` (2 requirements) and
-`openspec/specs/preview-execution/spec.md` (1 requirement).
+`openspec/specs/preview-execution/spec.md` (1 requirement), and
+`provider-registry-and-domain-adapters` is implemented, locally verified, and
+ARCHIVED as
+`openspec/changes/archive/2026-09-21-provider-registry-and-domain-adapters`,
+with canonical specs promoted to
+`openspec/specs/provider-adapters/spec.md` (2 requirements) and
+`openspec/specs/registry-and-domain-delivery/spec.md` (2 requirements).
 The `labrys-core` crate now holds a deterministic `Inspector`
 (`crates/labrys-core/src/inspector.rs`): `INSPECTION_ORDER` (dockerfile →
 compose → manifest → framework_convention → configuration → ci → source,
@@ -244,12 +250,19 @@ unsupported-runtime rejection, limit enforcement, argument structure, health
 semantics, workspace isolation, revocation, redaction, persisted execution and
 preview rows, concurrent sessions, build timeout cancellation, unhealthy
 containers yielding no URL, and expiry revocation against an isolated
-PostgreSQL 16 instance and a real Docker daemon). Image registries,
-domains/TLS, the public HTTP API, the CLI binary, and the dashboard remain
+PostgreSQL 16 instance and a real Docker daemon), plus 11 provider-delivery
+in `crates/labrys-core/tests/provider_delivery.rs` and 10 provider-delivery
+in `crates/labrys-control-plane/tests/provider_delivery.rs` covering scoped
+provisioning across all five provider kinds, accepted-not-ready semantics,
+credential redaction with recovery, approval-denied deletion with zero
+provider calls, digest-mismatch refusal, certificate-failure reporting, and
+durable operation/evidence persistence against an isolated PostgreSQL 16
+instance. The public HTTP API, the CLI binary, and the dashboard remain
 later changes. No CI, deployment, or production evidence exists yet. The
-Phase 5–7 queue (4 active changes) is authored and planning-only; the crate
-now holds durable persistence, a recoverable worker, and bounded
-container/preview execution but still no product entry points. The gate declaration is structurally valid and declares
+Phase 5–7 queue (3 active changes) is authored and planning-only; the crate
+now holds durable persistence, a recoverable worker, bounded
+container/preview execution, and provider/registry/domain delivery adapters
+but still no product entry points. The gate declaration is structurally valid and declares
 commands for all 8 checks, and a fresh `driftwatchdog gate` run now PASSES all
 8 (the earlier security-adapter block is resolved: `cargo audit` exits 0). The
 only audit exception is a documented, scoped ignore of RUSTSEC-2023-0071
@@ -259,15 +272,42 @@ the binary links only `sqlx-postgres`).
 
 ## Current spec
 
-`current_spec: provider-registry-and-domain-adapters`
+`current_spec: control-plane-api-and-cli`
 
-The package is newly authored and remains planning-only. It has not been
-implemented, verified, or archived. It is the next Phase 5 change in `ROADMAP.md`
-order and executes capability provisioning, OCI registry delivery, DNS/TLS
-issuance, and approval-gated domain traffic through provider adapters on top
-of the now durable control plane and bounded container execution. The Phase
-0–4 queue plus `control-plane-persistence-and-worker` and
-`container-execution-and-preview-runtime` remain implemented, locally
+`provider-registry-and-domain-adapters` is implemented, locally verified, and
+ARCHIVED as
+`openspec/changes/archive/2026-09-21-provider-registry-and-domain-adapters`,
+with canonical specs promoted to `openspec/specs/provider-adapters/spec.md`
+(2 requirements) and `openspec/specs/registry-and-domain-delivery/spec.md`
+(2 requirements). The `labrys-core` crate now holds a deterministic provider
+and delivery model (`crates/labrys-core/src/provider.rs`):
+`ProviderOperation` scope (application, environment, resource, capability,
+provider, idempotency, trace, secret refs only), `ProviderKind`
+(postgres/auth/file/object/generic with supply validation),
+`ProviderAction` with destructive (delete/replace/migrate/adopt) approval
+gating that performs no provider call on denial, `ProviderObservation`
+(acceptance keeps `provisioning`; only platform observation marks ready;
+agent claims only increment an ignored counter), redacted failures with
+recovery guidance, `RegistryArtifact` verified-production push gating plus
+digest-mismatch refusal with recovery, and `DomainDelivery`
+(DNS/TLS/traffic separately observable; traffic only to promoted healthy
+deployments behind propagated DNS and issued TLS; certificate failures report
+the failure, never healthy). The `labrys-control-plane` crate now holds the
+executable adapters (`crates/labrys-control-plane/src/providers.rs`):
+`ProviderAdapter`/`OciRegistry`/`DomainDeliveryAdapter` traits with local
+test doubles (`LocalTestAdapter` ×5 kinds, `LocalTestRegistry`,
+`LocalDomainDelivery`) and failure injection
+(timeout/mismatch/credential-leak/transient), `ProviderRuntime` persisting
+operations (unique idempotency key), digest evidence, domain state, redacted
+events, usage, and hash-chained audit through the worker boundary, plus
+`ProviderJobDispatcher` routing jobs with generic fallback, backed by
+migration `20260921000002_provider_delivery.sql`
+(`provider_operations`, `registry_deliveries`, `domain_deliveries`).
+`control-plane-api-and-cli` is newly authored and remains planning-only. It
+has not been implemented, verified, or archived. It is the next Phase 6
+change in `ROADMAP.md` order and exposes the persisted control plane through
+an authenticated Axum API and the stable `labrys` CLI. The Phase 0–5 queue
+plus `container-execution-and-preview-runtime` remain implemented, locally
 verified, and archived.
 
 ## Verification evidence
