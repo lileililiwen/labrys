@@ -81,8 +81,29 @@ cosign):
   HTTP serves loopback only unless `LABRYS_ALLOW_PLAIN_HTTP=1` marks a
   disposable environment. Per-IP rate limiting defaults to 120 req/min
   (`LABRYS_API_RATE_LIMIT_PER_MINUTE`).
-- Runtime tiers: Tier 0 generic Dockerfile; Tier 1 language detection;
-  Tier 2 framework layout. Tier 3 remains roadmap scope.
+- Runtime tiers: Tier 0 generic Dockerfile (any valid `FROM` line builds
+  and runs regardless of language); Tier 1 language detection;
+  Tier 2 framework layout; Tier 3 deep framework integrations with
+  layout-derived conventions:
+  - Django (`manage.py` + settings package + migrations layout):
+    `manage.py runserver` dev, `gunicorn <pkg>.wsgi:application` prod,
+    `manage.py migrate` / `manage.py test` proposed runners, no framework
+    health default (TCP-only).
+  - FastAPI (app entry instantiating `FastAPI` + uvicorn/alembic/pytest
+    markers): `uvicorn <module>:app [--reload]` dev/prod,
+    `alembic upgrade head` / `pytest` when evidenced, `/health` default.
+  - Axum (`axum` + `src/main.rs` + sqlx/diesel or migrations layout):
+    `cargo run` dev, `cargo build --release` prod,
+    `sqlx migrate run` / `diesel migration run` when evidenced, `/health`
+    default.
+  - Rust workspace (`[workspace]` + sqlx/diesel + migrations layout):
+    cargo conventions with the matching migration runner.
+  - Expo (`app.json` + `app/` routes or `eas.json`): `expo start` dev,
+    `expo export` prod.
+  Migration/test commands are proposed plans surfaced through adoption
+  items and `labrys.yaml` runtime notes; they never auto-run without a
+  reviewed job under approval. Flat or partial layouts stay Tier 2 with
+  adapter defaults, and Tier 0 generic fallback is unchanged.
 - Dispatcher selection: the daemon probes `LABRYS_DOCKER_BIN` under
   `LABRYS_RUNTIME_MODE` (`auto` default, `docker`, `disabled`) with the
   workspace root from `LABRYS_WORKSPACE_ROOT` and the preview TTL from

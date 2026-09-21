@@ -4,6 +4,7 @@ use crate::application::Application;
 use crate::environment::Environment;
 use crate::error::{CoreError, Result};
 use crate::origin::Origin;
+use crate::runtime::{DetectedRuntime, RuntimeKind, SupportTier};
 use crate::state::DesiredState;
 
 /// Version of the portable manifest schema implemented by this crate.
@@ -24,6 +25,100 @@ pub struct Manifest {
     pub environments: Vec<ManifestEnvironment>,
     #[serde(default)]
     pub desired_state: Option<DesiredState>,
+    /// Portable runtime detection notes: kind, tier, framework, and the
+    /// proposed dev/prod commands so another checkout reproduces the plan.
+    /// `None` for hand-written manifests; the database stays authoritative.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_notes: Option<RuntimeNotes>,
+}
+
+/// Portable runtime detection notes carried by `labrys.yaml`.
+///
+/// Commands are proposed plans (never auto-executed); exporting them keeps
+/// the checked-in manifest reproducible without re-running detection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeNotes {
+    pub kind: RuntimeKind,
+    pub tier: SupportTier,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub framework: Option<String>,
+    #[serde(default)]
+    pub dev_command: Vec<String>,
+    #[serde(default)]
+    pub prod_command: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health_path: Option<String>,
+}
+
+impl RuntimeNotes {
+    /// Captures a detection as portable notes. Tier 3 detections resolve
+    /// their deep conventions; lower tiers record the adapter commands.
+    pub fn from_detection(detected: &DetectedRuntime) -> Self {
+        use crate::runtime::{
+            DotNetAdapter, ExpoAdapter, GenericAdapter, NodeAdapter, PythonAdapter, RuntimeAdapter,
+            RustAdapter,
+        };
+        let conventions = detected.conventions();
+        let (dev_command, prod_command, health_path) = match detected.kind {
+            RuntimeKind::Generic => (
+                GenericAdapter.dev_command(),
+                GenericAdapter.prod_command(),
+                None,
+            ),
+            RuntimeKind::Node => (
+                NodeAdapter.dev_command(),
+                NodeAdapter.prod_command(),
+                NodeAdapter.health_path(),
+            ),
+            RuntimeKind::DotNet => (
+                DotNetAdapter.dev_command(),
+                DotNetAdapter.prod_command(),
+                DotNetAdapter.health_path(),
+            ),
+            RuntimeKind::Python => (
+                conventions
+                    .as_ref()
+                    .map(|c| c.dev_command.clone())
+                    .unwrap_or_else(|| PythonAdapter.dev_command()),
+                conventions
+                    .as_ref()
+                    .map(|c| c.prod_command.clone())
+                    .unwrap_or_else(|| PythonAdapter.prod_command()),
+                conventions.as_ref().and_then(|c| c.health_path.clone()),
+            ),
+            RuntimeKind::Rust => (
+                conventions
+                    .as_ref()
+                    .map(|c| c.dev_command.clone())
+                    .unwrap_or_else(|| RustAdapter.dev_command()),
+                conventions
+                    .as_ref()
+                    .map(|c| c.prod_command.clone())
+                    .unwrap_or_else(|| RustAdapter.prod_command()),
+                conventions.as_ref().and_then(|c| c.health_path.clone()),
+            ),
+            RuntimeKind::Expo => (
+                conventions
+                    .as_ref()
+                    .map(|c| c.dev_command.clone())
+                    .unwrap_or_else(|| ExpoAdapter.dev_command()),
+                conventions
+                    .as_ref()
+                    .map(|c| c.prod_command.clone())
+                    .unwrap_or_else(|| ExpoAdapter.prod_command()),
+                None,
+            ),
+        };
+        Self {
+            kind: detected.kind,
+            tier: detected.tier,
+            framework: detected.framework.clone(),
+            dev_command,
+            prod_command,
+            health_path,
+        }
+    }
 }
 
 /// Portable environment entry inside a manifest.
@@ -63,6 +158,7 @@ impl Manifest {
                 })
                 .collect(),
             desired_state: Some(app.desired_state.clone()),
+            runtime_notes: None,
         }
     }
 

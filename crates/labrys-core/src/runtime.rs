@@ -305,9 +305,195 @@ impl BuildResult {
 pub struct DetectedRuntime {
     pub kind: RuntimeKind,
     pub tier: SupportTier,
+    /// Deep framework identity (`django`, `fastapi`, `axum`, `rust`,
+    /// `expo`) when Tier 3 layout evidence resolved one; `None` for
+    /// Tier 0–2 language-level detections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub framework: Option<String>,
+    /// Entry point backing convention commands: the Django settings
+    /// package (for `<pkg>.wsgi:application`) or the FastAPI module
+    /// (for `<module>:app`). `None` when Tier 3 needs no entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prod_entry: Option<String>,
+    /// Evidenced migration runner (e.g. `manage.py migrate`,
+    /// `alembic upgrade head`). Empty means no runner was evidenced —
+    /// the platform reports "no detected convention" rather than
+    /// inventing one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub migrate_command: Vec<String>,
+    /// Evidenced test runner. Empty means no runner was evidenced.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub test_command: Vec<String>,
     /// Evidence sources consulted, newest last (file paths).
     #[serde(default)]
     pub evidence: Vec<String>,
+}
+
+impl DetectedRuntime {
+    /// Language-level detection without deep framework identity.
+    pub fn new(kind: RuntimeKind, tier: SupportTier, evidence: Vec<String>) -> Self {
+        Self {
+            kind,
+            tier,
+            framework: None,
+            prod_entry: None,
+            migrate_command: Vec::new(),
+            test_command: Vec::new(),
+            evidence,
+        }
+    }
+
+    /// Tier 3 detection with deep framework identity and conventions.
+    pub fn with_framework(
+        kind: RuntimeKind,
+        framework: impl Into<String>,
+        evidence: Vec<String>,
+    ) -> Self {
+        Self {
+            kind,
+            tier: SupportTier::Tier3,
+            framework: Some(framework.into()),
+            prod_entry: None,
+            migrate_command: Vec::new(),
+            test_command: Vec::new(),
+            evidence,
+        }
+    }
+
+    /// Resolves the Tier 3 conventions for this detection, if any.
+    pub fn conventions(&self) -> Option<FrameworkConventions> {
+        let framework = self.framework.as_deref()?;
+        let entry = self.prod_entry.as_deref().unwrap_or("");
+        FrameworkConventions::lookup(self.kind, framework, entry).map(|conventions| {
+            conventions
+                .with_migrate(self.migrate_command.clone())
+                .with_test(self.test_command.clone())
+        })
+    }
+}
+
+/// Deep Tier 3 conventions for one framework: layout-derived migration,
+/// test, dev-server, production, and health defaults.
+///
+/// Commands are *proposed* plans, never auto-executed: the platform runs
+/// them only through reviewed jobs under approval gates. An empty
+/// `migrate_command`/`test_command` means no runner was evidenced — the
+/// platform reports "no detected convention" rather than inventing one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FrameworkConventions {
+    pub framework: String,
+    #[serde(default)]
+    pub migrate_command: Vec<String>,
+    #[serde(default)]
+    pub test_command: Vec<String>,
+    pub dev_command: Vec<String>,
+    pub prod_command: Vec<String>,
+    /// Conventional HTTP health path, if the framework defines one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health_path: Option<String>,
+    /// Evidence sources behind the conventions (file paths).
+    #[serde(default)]
+    pub evidence: Vec<String>,
+}
+
+impl FrameworkConventions {
+    /// Tier 3 convention table. `prod_entry` fills the `{entry}` slot for
+    /// entry-point-derived production commands (FastAPI module path,
+    /// Django WSGI module).
+    pub fn lookup(kind: RuntimeKind, framework: &str, prod_entry: &str) -> Option<Self> {
+        let entry = prod_entry.trim();
+        match (kind, framework) {
+            (RuntimeKind::Python, "django") if !entry.is_empty() => Some(Self {
+                framework: "django".to_string(),
+                migrate_command: vec![
+                    "python".to_string(),
+                    "manage.py".to_string(),
+                    "migrate".to_string(),
+                ],
+                test_command: vec![
+                    "python".to_string(),
+                    "manage.py".to_string(),
+                    "test".to_string(),
+                ],
+                dev_command: vec![
+                    "python".to_string(),
+                    "manage.py".to_string(),
+                    "runserver".to_string(),
+                ],
+                prod_command: vec!["gunicorn".to_string(), format!("{entry}.wsgi:application")],
+                health_path: None,
+                evidence: Vec::new(),
+            }),
+            (RuntimeKind::Python, "fastapi") if !entry.is_empty() => Some(Self {
+                framework: "fastapi".to_string(),
+                migrate_command: Vec::new(),
+                test_command: Vec::new(),
+                dev_command: vec![
+                    "python".to_string(),
+                    "-m".to_string(),
+                    "uvicorn".to_string(),
+                    format!("{entry}:app"),
+                    "--reload".to_string(),
+                ],
+                prod_command: vec![
+                    "python".to_string(),
+                    "-m".to_string(),
+                    "uvicorn".to_string(),
+                    format!("{entry}:app"),
+                ],
+                health_path: Some("/health".to_string()),
+                evidence: Vec::new(),
+            }),
+            (RuntimeKind::Rust, "axum") => Some(Self {
+                framework: "axum".to_string(),
+                migrate_command: Vec::new(),
+                test_command: vec!["cargo".to_string(), "test".to_string()],
+                dev_command: vec!["cargo".to_string(), "run".to_string()],
+                prod_command: vec![
+                    "cargo".to_string(),
+                    "build".to_string(),
+                    "--release".to_string(),
+                ],
+                health_path: Some("/health".to_string()),
+                evidence: Vec::new(),
+            }),
+            (RuntimeKind::Rust, "rust") => Some(Self {
+                framework: "rust".to_string(),
+                migrate_command: Vec::new(),
+                test_command: vec!["cargo".to_string(), "test".to_string()],
+                dev_command: vec!["cargo".to_string(), "run".to_string()],
+                prod_command: vec![
+                    "cargo".to_string(),
+                    "build".to_string(),
+                    "--release".to_string(),
+                ],
+                health_path: None,
+                evidence: Vec::new(),
+            }),
+            (RuntimeKind::Expo, "expo") => Some(Self {
+                framework: "expo".to_string(),
+                migrate_command: Vec::new(),
+                test_command: Vec::new(),
+                dev_command: vec!["expo".to_string(), "start".to_string()],
+                prod_command: vec!["expo".to_string(), "export".to_string()],
+                health_path: None,
+                evidence: Vec::new(),
+            }),
+            _ => None,
+        }
+    }
+
+    /// Fills migration/test conventions evidenced after lookup.
+    pub fn with_migrate(mut self, command: Vec<String>) -> Self {
+        self.migrate_command = command;
+        self
+    }
+
+    pub fn with_test(mut self, command: Vec<String>) -> Self {
+        self.test_command = command;
+        self
+    }
 }
 
 /// Language-independent runtime execution contract.
@@ -375,11 +561,11 @@ impl RuntimeAdapter for GenericAdapter {
         if !Self::has_dockerfile(snapshot) {
             return None;
         }
-        Some(DetectedRuntime {
-            kind: RuntimeKind::Generic,
-            tier: SupportTier::Tier0,
-            evidence: vec![path],
-        })
+        Some(DetectedRuntime::new(
+            RuntimeKind::Generic,
+            SupportTier::Tier0,
+            vec![path],
+        ))
     }
 
     fn dev_command(&self) -> Vec<String> {
@@ -421,11 +607,7 @@ impl RuntimeAdapter for NodeAdapter {
         } else {
             SupportTier::Tier1
         };
-        Some(DetectedRuntime {
-            kind: RuntimeKind::Node,
-            tier,
-            evidence,
-        })
+        Some(DetectedRuntime::new(RuntimeKind::Node, tier, evidence))
     }
 
     fn dev_command(&self) -> Vec<String> {
@@ -486,11 +668,7 @@ impl RuntimeAdapter for DotNetAdapter {
         } else {
             SupportTier::Tier1
         };
-        Some(DetectedRuntime {
-            kind: RuntimeKind::DotNet,
-            tier,
-            evidence,
-        })
+        Some(DetectedRuntime::new(RuntimeKind::DotNet, tier, evidence))
     }
 
     fn dev_command(&self) -> Vec<String> {
@@ -515,7 +693,93 @@ impl RuntimeAdapter for DotNetAdapter {
     }
 }
 
-/// Python adapter (Tier 1; Tier 2 with Django/FastAPI conventions).
+/// Tier 3 Django: `manage.py` plus a settings module inside a package
+/// plus a migrations layout, so the WSGI entry and both runners resolve.
+/// Flat layouts (root `settings.py`) stay Tier 2: the WSGI module cannot
+/// be derived without inventing it.
+fn detect_django(snapshot: &ProjectSnapshot) -> Option<DetectedRuntime> {
+    let mut settings = snapshot.files_named_anywhere(&["settings.py"]);
+    settings.sort_by(|a, b| a.0.cmp(b.0));
+    let (settings_path, _) = settings.first()?;
+    // The settings package backs `<pkg>.wsgi:application`.
+    let package = settings_path
+        .rsplit_once('/')
+        .map(|(dir, _)| dir.replace('/', "."))
+        .filter(|dir| !dir.is_empty())?;
+    if !snapshot.has_dir_anywhere("migrations") {
+        return None;
+    }
+    let mut detected = DetectedRuntime::with_framework(
+        RuntimeKind::Python,
+        "django",
+        vec![
+            "manage.py".to_string(),
+            (*settings_path).to_string(),
+            "migrations/".to_string(),
+        ],
+    );
+    detected.prod_entry = Some(package);
+    detected.migrate_command = vec![
+        "python".to_string(),
+        "manage.py".to_string(),
+        "migrate".to_string(),
+    ];
+    detected.test_command = vec![
+        "python".to_string(),
+        "manage.py".to_string(),
+        "test".to_string(),
+    ];
+    Some(detected)
+}
+
+/// Tier 3 FastAPI: an app entry instantiating `FastAPI` plus runner
+/// tooling (uvicorn, alembic, or pytest/tests). The module path backs
+/// `<module>:app` for uvicorn.
+fn detect_fastapi(snapshot: &ProjectSnapshot) -> Option<DetectedRuntime> {
+    let mut entries = snapshot.files_named_anywhere(&["main.py", "app.py"]);
+    entries.sort_by(|a, b| a.0.cmp(b.0));
+    let (entry_path, _) = entries
+        .iter()
+        .find(|(_, content)| content.contains("FastAPI"))?;
+    let module = entry_path
+        .strip_suffix(".py")
+        .unwrap_or(entry_path)
+        .replace('/', ".");
+    let has_uvicorn = snapshot
+        .any_content_contains_insensitive("uvicorn")
+        .is_some();
+    let has_alembic = snapshot.has_file("alembic.ini") || snapshot.has_dir_anywhere("alembic");
+    let has_pytest = snapshot
+        .any_content_contains_insensitive("pytest")
+        .is_some()
+        || snapshot.has_dir_anywhere("tests");
+    if !(has_uvicorn || has_alembic || has_pytest) {
+        return None;
+    }
+    let mut evidence = vec![
+        "requirements.txt|pyproject.toml|setup.py".to_string(),
+        (*entry_path).to_string(),
+    ];
+    if has_alembic {
+        evidence.push("alembic.ini|alembic/".to_string());
+    }
+    let mut detected = DetectedRuntime::with_framework(RuntimeKind::Python, "fastapi", evidence);
+    detected.prod_entry = Some(module);
+    if has_alembic {
+        detected.migrate_command = vec![
+            "alembic".to_string(),
+            "upgrade".to_string(),
+            "head".to_string(),
+        ];
+    }
+    if has_pytest {
+        detected.test_command = vec!["pytest".to_string()];
+    }
+    Some(detected)
+}
+
+/// Python adapter (Tier 1; Tier 2 with Django/FastAPI conventions;
+/// Tier 3 with deep Django/FastAPI layouts).
 pub struct PythonAdapter;
 
 impl RuntimeAdapter for PythonAdapter {
@@ -534,6 +798,23 @@ impl RuntimeAdapter for PythonAdapter {
         if !has_manifest {
             return None;
         }
+        // Tier 3 Django: manage.py plus a settings module plus a
+        // migrations layout, so the WSGI entry and runners resolve.
+        if snapshot.has_file("manage.py") {
+            if let Some(django) = detect_django(snapshot) {
+                return Some(django);
+            }
+        }
+        // Tier 3 FastAPI: an app entry instantiating FastAPI plus runner
+        // tooling (uvicorn, alembic, or pytest/tests).
+        if snapshot
+            .any_content_contains_insensitive("fastapi")
+            .is_some()
+        {
+            if let Some(fastapi) = detect_fastapi(snapshot) {
+                return Some(fastapi);
+            }
+        }
         let mut evidence = vec!["requirements.txt|pyproject.toml|setup.py".to_string()];
         let tier = if snapshot.has_file("manage.py")
             || snapshot
@@ -548,11 +829,7 @@ impl RuntimeAdapter for PythonAdapter {
         } else {
             SupportTier::Tier1
         };
-        Some(DetectedRuntime {
-            kind: RuntimeKind::Python,
-            tier,
-            evidence,
-        })
+        Some(DetectedRuntime::new(RuntimeKind::Python, tier, evidence))
     }
 
     fn dev_command(&self) -> Vec<String> {
@@ -597,6 +874,65 @@ impl RuntimeAdapter for RustAdapter {
 
     fn detect(&self, snapshot: &ProjectSnapshot) -> Option<DetectedRuntime> {
         let manifest = snapshot.get("Cargo.toml")?;
+        // Tier 3 Axum: the dependency plus a binary entry plus migration
+        // tooling (sqlx/diesel markers or a migrations layout).
+        if manifest.contains("axum") && snapshot.has_file("src/main.rs") {
+            let tooling = manifest.contains("sqlx")
+                || manifest.contains("diesel")
+                || snapshot.has_dir_anywhere("migrations")
+                || snapshot.has_file("diesel.toml");
+            if tooling {
+                let mut detected = DetectedRuntime::with_framework(
+                    RuntimeKind::Rust,
+                    "axum",
+                    vec!["Cargo.toml:axum".to_string(), "src/main.rs".to_string()],
+                );
+                if manifest.contains("sqlx") {
+                    detected.migrate_command =
+                        vec!["sqlx".to_string(), "migrate".to_string(), "run".to_string()];
+                    detected.evidence.push("Cargo.toml:sqlx".to_string());
+                } else if manifest.contains("diesel") || snapshot.has_file("diesel.toml") {
+                    detected.migrate_command = vec![
+                        "diesel".to_string(),
+                        "migration".to_string(),
+                        "run".to_string(),
+                    ];
+                    detected
+                        .evidence
+                        .push("Cargo.toml:diesel|diesel.toml".to_string());
+                } else {
+                    detected.evidence.push("migrations/".to_string());
+                }
+                detected.test_command = vec!["cargo".to_string(), "test".to_string()];
+                return Some(detected);
+            }
+        }
+        // Tier 3 Rust workspace: workspace layout plus sqlx/diesel plus a
+        // migrations layout for the deep migration/test conventions.
+        if manifest.contains("[workspace]")
+            && (manifest.contains("sqlx") || manifest.contains("diesel"))
+            && snapshot.has_dir_anywhere("migrations")
+        {
+            let mut detected = DetectedRuntime::with_framework(
+                RuntimeKind::Rust,
+                "rust",
+                vec![
+                    "Cargo.toml:[workspace]".to_string(),
+                    "migrations/".to_string(),
+                ],
+            );
+            detected.migrate_command = if manifest.contains("diesel") {
+                vec![
+                    "diesel".to_string(),
+                    "migration".to_string(),
+                    "run".to_string(),
+                ]
+            } else {
+                vec!["sqlx".to_string(), "migrate".to_string(), "run".to_string()]
+            };
+            detected.test_command = vec!["cargo".to_string(), "test".to_string()];
+            return Some(detected);
+        }
         let mut evidence = vec!["Cargo.toml".to_string()];
         let tier = if manifest.contains("axum")
             || manifest.contains("actix-web")
@@ -607,11 +943,7 @@ impl RuntimeAdapter for RustAdapter {
         } else {
             SupportTier::Tier1
         };
-        Some(DetectedRuntime {
-            kind: RuntimeKind::Rust,
-            tier,
-            evidence,
-        })
+        Some(DetectedRuntime::new(RuntimeKind::Rust, tier, evidence))
     }
 
     fn dev_command(&self) -> Vec<String> {
@@ -652,11 +984,27 @@ impl RuntimeAdapter for ExpoAdapter {
         if !package.contains("expo") || !snapshot.has_file("app.json") {
             return None;
         }
-        Some(DetectedRuntime {
-            kind: RuntimeKind::Expo,
-            tier: SupportTier::Tier1,
-            evidence: vec!["package.json:expo".to_string(), "app.json".to_string()],
-        })
+        // Tier 3 Expo: file-based routing (`app/` dir) or build profiles
+        // (`eas.json`) beyond the bare managed-workflow markers.
+        if snapshot.has_dir_anywhere("app") || snapshot.has_file("eas.json") {
+            let mut evidence = vec!["package.json:expo".to_string(), "app.json".to_string()];
+            if snapshot.has_dir_anywhere("app") {
+                evidence.push("app/".to_string());
+            }
+            if snapshot.has_file("eas.json") {
+                evidence.push("eas.json".to_string());
+            }
+            let mut detected = DetectedRuntime::with_framework(RuntimeKind::Expo, "expo", evidence);
+            if package.contains("jest") {
+                detected.test_command = vec!["jest".to_string()];
+            }
+            return Some(detected);
+        }
+        Some(DetectedRuntime::new(
+            RuntimeKind::Expo,
+            SupportTier::Tier1,
+            vec!["package.json:expo".to_string(), "app.json".to_string()],
+        ))
     }
 
     fn dev_command(&self) -> Vec<String> {
@@ -720,6 +1068,10 @@ pub fn prepare(
         ));
     }
     limits.validate()?;
+    // Tier 3 detections carry deep framework conventions: dev/prod
+    // commands and health defaults come from the resolved layout while
+    // the OCI interchange and dev/prod invariants below still hold.
+    let conventions = detected.conventions();
     let (run_command, oci_image, health_path, tier) = match detected.kind {
         RuntimeKind::Generic => (
             GenericAdapter.dev_command(),
@@ -740,19 +1092,41 @@ pub fn prepare(
             detected.tier,
         ),
         RuntimeKind::Python => (
-            PythonAdapter.dev_command(),
+            conventions
+                .as_ref()
+                .map(|c| c.dev_command.clone())
+                .unwrap_or_else(|| PythonAdapter.dev_command()),
             PythonAdapter.prod_oci_image(),
-            PythonAdapter.health_path(),
+            conventions
+                .as_ref()
+                .and_then(|c| c.health_path.clone())
+                .or_else(|| {
+                    // Django defines no framework health endpoint: TCP-only.
+                    if detected.framework.as_deref() == Some("django") {
+                        None
+                    } else {
+                        PythonAdapter.health_path()
+                    }
+                }),
             detected.tier,
         ),
         RuntimeKind::Rust => (
-            RustAdapter.dev_command(),
+            conventions
+                .as_ref()
+                .map(|c| c.dev_command.clone())
+                .unwrap_or_else(|| RustAdapter.dev_command()),
             RustAdapter.prod_oci_image(),
-            RustAdapter.health_path(),
+            conventions
+                .as_ref()
+                .and_then(|c| c.health_path.clone())
+                .or_else(|| RustAdapter.health_path()),
             detected.tier,
         ),
         RuntimeKind::Expo => (
-            ExpoAdapter.dev_command(),
+            conventions
+                .as_ref()
+                .map(|c| c.dev_command.clone())
+                .unwrap_or_else(|| ExpoAdapter.dev_command()),
             None,
             ExpoAdapter.health_path(),
             detected.tier,
@@ -765,9 +1139,18 @@ pub fn prepare(
                 RuntimeKind::Generic => GenericAdapter.prod_command(),
                 RuntimeKind::Node => NodeAdapter.prod_command(),
                 RuntimeKind::DotNet => DotNetAdapter.prod_command(),
-                RuntimeKind::Python => PythonAdapter.prod_command(),
-                RuntimeKind::Rust => RustAdapter.prod_command(),
-                RuntimeKind::Expo => ExpoAdapter.prod_command(),
+                RuntimeKind::Python => conventions
+                    .as_ref()
+                    .map(|c| c.prod_command.clone())
+                    .unwrap_or_else(|| PythonAdapter.prod_command()),
+                RuntimeKind::Rust => conventions
+                    .as_ref()
+                    .map(|c| c.prod_command.clone())
+                    .unwrap_or_else(|| RustAdapter.prod_command()),
+                RuntimeKind::Expo => conventions
+                    .as_ref()
+                    .map(|c| c.prod_command.clone())
+                    .unwrap_or_else(|| ExpoAdapter.prod_command()),
             };
             (prod_command, oci_image)
         }

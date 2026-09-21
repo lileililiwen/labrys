@@ -94,7 +94,7 @@ pub use inspector::{
     Evidence, ExplicitApproval, Fact, Inspector, InspectorPlugin, PluginFinding, ProjectSnapshot,
     Unknown, INSPECTION_ORDER,
 };
-pub use manifest::Manifest;
+pub use manifest::{Manifest, RuntimeNotes};
 pub use observability::{
     AuditLog, AuditRecord, Correlation, EventAction, EventActor, EventDraft, EventLog,
     EventResource, EventResult, EvidenceStore, FailureExplanation, Finding, HealthSnapshot,
@@ -120,9 +120,9 @@ pub use provider::{
 pub use repository::{ApplicationRepository, InMemoryApplicationRepository};
 pub use runtime::{
     detect_runtime, enforce_run_usage, evaluate_health, prepare, simulate_build, BuildResult,
-    BuildStatus, DetectedRuntime, DotNetAdapter, Endpoint, ExpoAdapter, GenericAdapter,
-    HealthStatus, NetworkMode, NodeAdapter, PythonAdapter, RuntimeAdapter, RuntimeConfig,
-    RuntimeKind, RuntimeProfile, RustAdapter, SandboxLimits, SupportTier,
+    BuildStatus, DetectedRuntime, DotNetAdapter, Endpoint, ExpoAdapter, FrameworkConventions,
+    GenericAdapter, HealthStatus, NetworkMode, NodeAdapter, PythonAdapter, RuntimeAdapter,
+    RuntimeConfig, RuntimeKind, RuntimeProfile, RustAdapter, SandboxLimits, SupportTier,
 };
 pub use state::{DesiredState, ObservedState, ObservedStatus};
 pub use surfaces::{

@@ -72,7 +72,7 @@
   (`cargo fmt --check` PASS; `cargo clippy --workspace --all-targets
   -- -D warnings` PASS; `cargo build --workspace` PASS; `cargo test
   --workspace` 328/328 (312 prior + 7 auth unit + 9 api_hardening);
-  `secret-scan.sh` PASS — one prerequisite rename of `sk-live-*` test
+  `secret-scan.sh` PASS — one prerequisite rename of live-key test
   canaries to `test-api-key-*` (plus the matching archived quote) so the
   live-key pattern stays untriggered, no allowlist expansion; `cargo
   audit` exit 0 (new `axum-server`/`rustls`/`rustls-pemfile`/`subtle`/

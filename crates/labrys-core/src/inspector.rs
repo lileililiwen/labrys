@@ -101,6 +101,16 @@ impl ProjectSnapshot {
             .any(|p| p == prefix || p.starts_with(&marker))
     }
 
+    /// True when a directory named `name` exists at any depth
+    /// (`migrations/`, `shop/polls/migrations/`, ...).
+    pub fn has_dir_anywhere(&self, name: &str) -> bool {
+        let root = format!("{name}/");
+        let nested = format!("/{name}/");
+        self.files
+            .keys()
+            .any(|p| *p == name || p.starts_with(&root) || p.contains(&nested))
+    }
+
     /// True when any file content contains `needle` (case-sensitive).
     pub fn any_content_contains(&self, needle: &str) -> Option<(&str, &str)> {
         self.files
@@ -299,6 +309,7 @@ impl Inspector {
         detect_compose(snapshot, &mut builder);
         detect_manifests(snapshot, &mut builder);
         detect_framework_conventions(snapshot, &mut builder);
+        detect_deep_framework_conventions(snapshot, &mut builder);
         detect_configuration(snapshot, &mut builder);
         detect_ci(snapshot, &mut builder);
         detect_source_fallback(snapshot, &mut builder);
@@ -752,6 +763,150 @@ fn detect_framework_conventions(snapshot: &ProjectSnapshot, builder: &mut Profil
     }
 }
 
+/// Deep Tier 3 framework evidence: settings/modules, route and migration
+/// discovery that corroborates or confines adapter claims through the
+/// existing confidence/unknown machinery. Confidences stay at or below
+/// the manifest stage (0.9) except for fully-resolved layouts (0.95),
+/// so deep evidence corroborates manifest findings and only rival
+/// high-confidence claims collapse to explicit unknowns.
+fn detect_deep_framework_conventions(snapshot: &ProjectSnapshot, builder: &mut ProfileBuilder) {
+    let convention = |source: &str, detail: &str, confidence: f32| {
+        Evidence::new(
+            source.to_string(),
+            "framework_convention",
+            detail.to_string(),
+            confidence,
+        )
+    };
+    // Django: settings module discovery corroborates the manifest claim;
+    // manage.py plus settings is a fully-resolved layout.
+    let mut settings = snapshot.files_named_anywhere(&["settings.py"]);
+    settings.sort_by(|a, b| a.0.cmp(b.0));
+    if let Some((path, _)) = settings.first() {
+        builder.set_field(
+            "framework",
+            "django",
+            convention(path, "Django settings module discovered", 0.85),
+            0.85,
+        );
+    }
+    if snapshot.has_file("manage.py") {
+        if !settings.is_empty() && snapshot.has_dir_anywhere("migrations") {
+            builder.set_field(
+                "framework",
+                "django",
+                convention(
+                    "manage.py",
+                    "Django layout fully resolved (manage.py, settings, migrations)",
+                    0.95,
+                ),
+                0.95,
+            );
+        }
+        builder.push_fact(
+            "migration_runner",
+            "manage.py migrate".to_string(),
+            convention("manage.py", "Django migration runner convention", 0.9),
+        );
+        builder.push_fact(
+            "test_runner",
+            "manage.py test".to_string(),
+            convention("manage.py", "Django test runner convention", 0.8),
+        );
+    }
+    // FastAPI: entry-point content plus runner tooling.
+    let mut entries = snapshot.files_named_anywhere(&["main.py", "app.py"]);
+    entries.sort_by(|a, b| a.0.cmp(b.0));
+    if let Some((path, _)) = entries
+        .iter()
+        .find(|(_, content)| content.contains("FastAPI"))
+    {
+        builder.set_field(
+            "framework",
+            "fastapi",
+            convention(path, "FastAPI application entry discovered", 0.85),
+            0.85,
+        );
+    }
+    if snapshot.has_file("alembic.ini") || snapshot.has_dir_anywhere("alembic") {
+        builder.push_fact(
+            "migration_runner",
+            "alembic upgrade head".to_string(),
+            convention("alembic.ini", "Alembic migration runner convention", 0.9),
+        );
+    }
+    if snapshot.has_file("pytest.ini")
+        || snapshot.has_dir_anywhere("tests")
+        || snapshot
+            .any_content_contains_insensitive("pytest")
+            .is_some()
+    {
+        builder.push_fact(
+            "test_runner",
+            "pytest".to_string(),
+            convention("pytest", "pytest test runner convention", 0.8),
+        );
+    }
+    // Axum: binary entry using axum plus migration tooling.
+    let mut mains = snapshot.files_with_name("main.rs");
+    mains.sort_by(|a, b| a.0.cmp(b.0));
+    if let Some((path, _)) = mains.iter().find(|(_, c)| c.contains("axum")) {
+        builder.set_field(
+            "framework",
+            "axum",
+            convention(path, "Axum application entry discovered", 0.85),
+            0.85,
+        );
+    }
+    let cargo = snapshot.get("Cargo.toml").unwrap_or("");
+    if cargo.contains("sqlx") {
+        builder.push_fact(
+            "migration_runner",
+            "sqlx migrate run".to_string(),
+            convention("Cargo.toml", "sqlx migration runner convention", 0.9),
+        );
+    } else if cargo.contains("diesel") || snapshot.has_file("diesel.toml") {
+        builder.push_fact(
+            "migration_runner",
+            "diesel migration run".to_string(),
+            convention("Cargo.toml", "diesel migration runner convention", 0.9),
+        );
+    } else if snapshot.has_dir_anywhere("migrations") && snapshot.has_file("Cargo.toml") {
+        builder.push_fact(
+            "migration_runner",
+            "cargo migration runner (unresolved tool)".to_string(),
+            convention(
+                "migrations/",
+                "migrations layout without a resolved tool",
+                0.6,
+            ),
+        );
+    }
+    if snapshot.has_file("Cargo.toml") && cargo.contains("[workspace]") {
+        builder.push_fact(
+            "workspace",
+            "cargo workspace".to_string(),
+            convention("Cargo.toml", "Cargo workspace layout", 0.9),
+        );
+    }
+    // Expo: build profiles and file-based routing beyond bare markers.
+    if snapshot.has_file("eas.json") {
+        builder.push_fact(
+            "build_profile",
+            "eas".to_string(),
+            convention("eas.json", "Expo Application Services build profiles", 0.9),
+        );
+    }
+    if snapshot.has_dir_anywhere("app") && snapshot.has_file("app.json") {
+        builder.set_field(
+            "framework",
+            "expo",
+            convention("app/", "Expo file-based routing discovered", 0.85),
+            0.85,
+        );
+    }
+}
+
 fn detect_configuration(snapshot: &ProjectSnapshot, builder: &mut ProfileBuilder) {
     // Existing auth integrations are preserved as KEEP candidates later.
     if let Some((path, _)) = snapshot.any_content_contains("GOOGLE_CLIENT_ID") {
@@ -1098,6 +1253,29 @@ impl AdoptionPlan {
                 "Proposed platform capability; requires review and never applies automatically.",
                 Vec::new(),
             );
+        }
+
+        // Tier 3 framework runners are proposed, never auto-run: migration
+        // and test commands execute only through reviewed jobs under
+        // approval gates.
+        for fact in &profile.facts {
+            match fact.name.as_str() {
+                "migration_runner" => push_item(
+                    &mut items,
+                    AdoptionItemKind::Adopt,
+                    &format!("database migrations via {}", fact.value),
+                    "Proposed migration command from detected framework layout; requires review and never runs automatically.",
+                    vec![fact.evidence.clone()],
+                ),
+                "test_runner" => push_item(
+                    &mut items,
+                    AdoptionItemKind::Adopt,
+                    &format!("test suite via {}", fact.value),
+                    "Proposed test command from detected framework layout; requires review and never runs automatically.",
+                    vec![fact.evidence.clone()],
+                ),
+                _ => {}
+            }
         }
 
         items.push(AdoptionItem {
