@@ -11,7 +11,7 @@ previews, deployments, secrets, health, logs, verification, and rollback.
 
 ## Status
 
-The OpenSpec implementation queue through Phase 7 is complete: all sixteen
+The OpenSpec implementation queue through Phase 8 is complete: all twenty-one
 changes are archived and their capability specs promoted under
 `openspec/specs/`. `crates/labrys-core` holds the deterministic control-plane
 model — Application and desired state, inspector and adoption, agent protocol
@@ -29,8 +29,8 @@ API, and `.github/workflows/ci.yml` plus `scripts/` provide CI gates,
 disposable integration environments, versioned packaging, and tiered
 evidence collection (`docs/release.md`).
 
-This is verified by 299 workspace tests (integration enabled against isolated
-PostgreSQL/Docker), 19 dashboard tests, the staging smoke, and the local
+This is verified by 344 workspace tests (integration enabled against isolated
+PostgreSQL/Docker), 21 dashboard tests, the staging smoke, and the local
 Gate. It is **not** production delivery: `evidence/report.json` labels
 model, integration, and staging tiers separately, the daemon runs the
 executable dispatcher only when a container runtime is reachable (otherwise
@@ -67,10 +67,13 @@ The first delivery path is:
 Import → Inspect → Build → Run → Preview → Agent → Capability → Deploy → Observe
 ```
 
-Initial runtime boundaries are Generic Container, Node, .NET, and Python, with
-Rust and Expo following. Initial framework validation targets ASP.NET Core and
-Next.js. Initial platform capabilities are secrets, PostgreSQL, Google Auth,
-file storage, web preview, web deployment, logs, health, and rollback.
+Initial runtime boundaries are Generic Container, Node, .NET, Python, Rust,
+and Expo, with Tier 3 framework depth for Django, FastAPI, Axum, Rust
+workspaces, and Expo (layout-derived migration/test/dev/prod/health
+conventions, proposed — never auto-run). Initial framework validation
+targets ASP.NET Core and Next.js. Initial platform capabilities are
+secrets, PostgreSQL, Google Auth, file storage, web preview, web
+deployment, logs, health, and rollback.
 
 ## Development
 

@@ -6,10 +6,17 @@ holds no secret values and never reports healthy production from agent text.
 
 ## Routes
 
-- `/` overview: platform health with agent/platform attribution kept separate.
-- `/deployments`: deployment history with rollback targets (planned extension).
-- `/approvals`: approval-gated mutations with named approver (planned extension).
-- `/secrets`: secret references only — `ref_id`, version, scope, rotation state.
+- `/` overview (`DashboardView`): platform health with agent/platform
+  attribution kept separate.
+
+Implemented but not yet routed (covered by component tests):
+`SecretList` (secret references only — `ref_id`, version, scope, rotation
+state) and `RollbackDialog` (database-data warning gate plus named
+approver).
+
+Planned: `/deployments` (deployment history with rollback targets),
+`/approvals` (approval-gated mutations), and `/secrets` (standalone
+secret-reference view).
 
 ## Boundaries
 

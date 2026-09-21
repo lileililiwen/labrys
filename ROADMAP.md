@@ -3,7 +3,7 @@
 This roadmap is the dependency order for the delegated implementation queue.
 Sequence lives here, not in numeric OpenSpec change names.
 
-All sixteen changes below are implemented, locally verified, and archived under
+All twenty-one changes below are implemented, locally verified, and archived under
 `openspec/changes/archive/`; their capability specs are promoted to
 `openspec/specs/`. The queue is exhausted — extend this roadmap (or open a new
 change) before resuming implementation.
@@ -92,14 +92,32 @@ Add CI, packaging, migration checks, security gates, reproducible artifacts,
 and staged lifecycle evidence. This package does not convert local model tests
 into production claims without runtime proof.
 
+### Phase 8 — Execution hardening and runtime depth — ARCHIVED
+
+17. `executable-dispatch-wiring`
+18. `real-provider-delivery-adapters`
+19. `secret-encryption-hardening`
+20. `control-plane-api-hardening`
+21. `runtime-tier-depth-expansion`
+
+Wire the executable dispatcher with identity plumbing and staging execution
+proof; deliver real provider adapters (managed PostgreSQL, filesystem
+storage, OCI registry, DNS/TLS); seal secrets with a real AEAD cipher and
+approval-gated rotation; harden API auth (scoped multi-token credentials,
+actor binding, TLS termination, rate limits, redacted auth audit); and add
+Tier 3 framework depth (Django, FastAPI, Axum, Rust workspaces, Expo) with
+layout-derived conventions that are proposed, never auto-run.
+
 ## Version targets
 
 - `v0.1`: Phases 0–2, with the Run → Preview → Agent → Capability → Deploy loop
   demonstrable for the stated MVP runtimes and capabilities. Contracts and
   deterministic models are in place; the demonstrable loop still needs the
   SQLx persistence, container execution, and CLI binaries built on them.
-- `v0.2`: broader Rust/Expo support, Django/FastAPI/Axum integrations, stronger
-  adoption, and provider/plugin expansion.
+- `v0.2`: delivered in Phase 8 — broader Rust/Expo support,
+  Django/FastAPI/Axum integrations, stronger adoption (proposed migration
+  and test runners), and provider/plugin expansion. Remaining: further
+  framework adapters beyond the Tier 3 table in `docs/release.md`.
 - `v1.0`: stable public protocols, self-host runtime, cloud/service separation,
   upgrade and rollback contracts, and production evidence across supported tiers.
 
@@ -109,10 +127,14 @@ into production claims without runtime proof.
   logs, and receive health checks.
 - Tier 1: language/runtime version, entrypoint, ports, build, and run commands
   are detected.
-- Tier 2: framework layout, migrations, tests, dev server, and conventions are
-  understood.
-- Tier 3: capability binding, code modification, health, migration, preview,
-  and production conventions are deeply integrated.
+- Tier 2: framework layout is detected with adapter-level dev/prod commands;
+  partial layouts fall back here without invented entries.
+- Tier 3: deep framework integrations (Django, FastAPI, Axum, Rust
+  workspaces, Expo — see the per-framework table in `docs/release.md`) with
+  layout-derived migration, test, dev-server, production, and health
+  conventions. Commands are proposed plans surfaced through adoption items
+  and `labrys.yaml` runtime notes; they never auto-run without a reviewed
+  job under approval.
 
 ## Deferred scope
 

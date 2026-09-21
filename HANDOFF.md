@@ -278,12 +278,12 @@ zero jobs, deploy replay with one job, in-progress-never-healthy health,
 rollback boundaries and the database-data warning, log redaction and
 pagination, plugin accept/refuse, CLI black-box doctor and agent rollback,
 and attributed correlated events against an isolated PostgreSQL 16 instance,
-a real HTTP server, and a real `labrys` subprocess. The dashboard remains a
-later change. No CI, deployment, or production evidence exists yet. The
-Phase 5–7 queue (2 active changes) is authored and planning-only; the crate
-now holds durable persistence, a recoverable worker, bounded
-container/preview execution, provider/registry/domain delivery adapters, and
-an authenticated API/CLI entry point. The gate declaration is structurally valid and declares
+a real HTTP server, and a real `labrys` subprocess. The dashboard, CI,
+deployment, and production evidence have since landed as archived changes;
+no active changes remain and the crate now holds durable persistence, a
+recoverable worker, bounded container/preview execution, provider/registry/
+domain delivery adapters, a hardened authenticated API/CLI entry point, and
+Tier 3 runtime depth. The gate declaration is structurally valid and declares
 commands for all 8 checks, and a fresh `driftwatchdog gate` run now PASSES all
 8 (the earlier security-adapter block is resolved: `cargo audit` exits 0). The
 only audit exception is a documented, scoped ignore of RUSTSEC-2023-0071
@@ -293,11 +293,10 @@ the binary links only `sqlx-postgres`).
 
 ## Current spec
 
-No active changes remain (`openspec list` reports none); all sixteen
-roadmap changes plus the six Phase 5–7 execution changes plus the three
-hardening/depth follow-ups are implemented, locally verified, and
-archived. Resuming work means authoring a new change (or revising the
-roadmap).
+No active changes remain (`openspec list` reports none); all twenty-one
+changes (sixteen roadmap phases plus five execution-hardening and
+runtime-depth follow-ups) are implemented, locally verified, and archived.
+Resuming work means authoring a new change (or revising the roadmap).
 
 - `executable-dispatch-wiring` is implemented, locally verified, and ARCHIVED
   as `openspec/changes/archive/2026-09-21-executable-dispatch-wiring`, with
