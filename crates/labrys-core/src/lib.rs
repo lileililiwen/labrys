@@ -68,6 +68,7 @@ pub use capability::{
     generic_postgres_binding, resolve_binding, Binding, BindingKind, BoundCapability, Capability,
     CapabilityMode, EnvContract, EnvSource, InjectionGrant, MasterKey, ModeTransition, Provider,
     ResourceRef, SealedSecret, SecretAction, SecretAudit, SecretStore, CAPABILITY_CONTRACT_VERSION,
+    SECRET_ENVELOPE_LEGACY_XOR, SECRET_ENVELOPE_VERSION,
 };
 pub use controller::{
     aggregate_health, redact_reason, ApplicationController, CapabilityController, CheckSource,

@@ -558,7 +558,16 @@ fn rotation_bumps_version_and_keeps_the_value_and_scope() {
     let g = grant("production", true);
     store.put("db.url", "s3cr3t", &g, "alice", now()).unwrap();
 
-    let version = store.rotate("db.url", "alice", now()).unwrap();
+    // Production rotation without a granted named approval is denied
+    // before any re-seal, with recovery.
+    let denied = ExplicitApproval::denied("alice", "rotate db.url");
+    let err = store.rotate("db.url", &denied, "alice", now()).unwrap_err();
+    assert!(matches!(err, CoreError::ApprovalRequired(_)));
+    assert!(err.to_string().contains("retry"));
+    assert_eq!(store.sealed("db.url").unwrap().version, 1);
+
+    let approval = ExplicitApproval::granted("bob", "rotate db.url");
+    let version = store.rotate("db.url", &approval, "alice", now()).unwrap();
     assert_eq!(version, 2);
     assert_eq!(store.sealed("db.url").unwrap().version, 2);
     assert_eq!(store.inject(&g, "db.url").unwrap(), "s3cr3t");
@@ -569,10 +578,11 @@ fn rotation_bumps_version_and_keeps_the_value_and_scope() {
         .find(|a| a.action == SecretAction::Rotate)
         .unwrap();
     assert!(!rotate_audit.to_event_detail().contains("s3cr3t"));
+    assert_eq!(rotate_audit.approved_by.as_deref(), Some("bob"));
 
     // Rotating an unknown reference fails.
     assert!(matches!(
-        store.rotate("nope", "alice", now()).unwrap_err(),
+        store.rotate("nope", &approval, "alice", now()).unwrap_err(),
         CoreError::SecretNotFound(_)
     ));
 }
