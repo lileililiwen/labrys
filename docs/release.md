@@ -10,7 +10,7 @@ from lower tiers alone.
 | `static` | Format, lint, specs, secret scan | CI `static` job, local Gate |
 | `model-only` | Pure-core unit tests, dashboard unit/contract tests | `cargo test -p labrys-core`, `npm test` |
 | `integration` | PostgreSQL-backed and Docker-backed tests, migration checks | `cargo test --workspace` with `LABRYS_DATABASE_URL`, `scripts/verify-migrations.sh` |
-| `staging` | Disposable entry-point smoke (import → observe) | `scripts/smoke-staging.sh` |
+| `staging` | Disposable entry-point smoke (import → build → run → health → preview-gate → cleanup) | `scripts/smoke-staging.sh` |
 | `production` | Runtime proof against provider scope | Manual staged runs only — never CI |
 
 Rules:
@@ -69,6 +69,12 @@ cosign):
 
 - Runtime tiers: Tier 0 generic Dockerfile; Tier 1 language detection;
   Tier 2 framework layout. Tier 3 remains roadmap scope.
+- Dispatcher selection: the daemon probes `LABRYS_DOCKER_BIN` under
+  `LABRYS_RUNTIME_MODE` (`auto` default, `docker`, `disabled`) with the
+  workspace root from `LABRYS_WORKSPACE_ROOT` and the preview TTL from
+  `LABRYS_PREVIEW_TTL_SECONDS` (60–86400 s). A reachable runtime runs the
+  executable dispatcher; otherwise the daemon reports noop-blocked with
+  recovery per execution stage and never simulates a pass.
 - Provider scope: local test doubles and approval-gated domain delivery.
   Cloud deployment automation is out of scope until an explicit provider
   change lands.

@@ -1,16 +1,23 @@
 use std::sync::Arc;
 
 use labrys_control_plane::{
-    connect, run_migrations, ApiConfig, ApiState, Config, NoopDispatcher, Worker,
+    connect, run_migrations, select_dispatcher, ApiConfig, ApiState, Config, Worker,
 };
 
 /// Control-plane process entry point.
 ///
 /// Loads database credentials and runtime settings from process configuration,
-/// runs embedded migrations explicitly, and starts the reconciliation workers.
-/// Provider/runtime execution is the safe no-op dispatcher until real
-/// execution is wired behind `JobDispatcher`, so this process never performs
-/// unrequested runtime work.
+/// runs embedded migrations explicitly, probes the container runtime, and
+/// starts the reconciliation workers.
+///
+/// Dispatcher selection comes from `LABRYS_RUNTIME_MODE` (auto/docker/disabled,
+/// default auto): a reachable runtime runs the executable dispatcher (real
+/// provider, container, and preview executors with job identity plumbed into
+/// persisted events and logs); otherwise the daemon starts with the
+/// no-op-blocked dispatcher and reports every execution stage as an
+/// environment blocker with the recovery action, never a simulated pass.
+/// `LABRYS_RUNTIME_MODE=docker` with an unreachable runtime fails startup
+/// fast instead of starting blocked.
 ///
 /// When `LABRYS_API_ADDR` is set (and `LABRYS_API_TOKEN` holds a valid
 /// token), the process also serves the authenticated control-plane API on
@@ -24,7 +31,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("migrations applied");
     }
 
-    let dispatcher = Arc::new(NoopDispatcher);
+    let selected = select_dispatcher(&pool, &config).await?;
+    match &selected.availability {
+        labrys_control_plane::RuntimeAvailability::Available { docker_version } => {
+            println!(
+                "dispatcher=executable (mode {}, runtime {docker_version}, workspace {}, preview ttl {}s)",
+                config.runtime_mode,
+                config.workspace_root.display(),
+                config.preview_ttl_secs,
+            );
+        }
+        labrys_control_plane::RuntimeAvailability::Unavailable { reason } => {
+            println!(
+                "dispatcher=noop-blocked (mode {}): BLOCKED — {reason}; recovery: {}",
+                config.runtime_mode,
+                labrys_control_plane::BLOCKER_RECOVERY,
+            );
+        }
+    }
+
+    let dispatcher = selected.dispatcher;
     let mut workers = Vec::new();
     let mut handles = Vec::new();
     for index in 0..config.max_concurrency {

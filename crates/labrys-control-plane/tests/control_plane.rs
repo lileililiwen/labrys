@@ -71,6 +71,10 @@ fn test_config(worker_id: &str) -> Config {
         drain_timeout_ms: 200,
         max_concurrency: 1,
         run_migrations: false,
+        runtime_mode: labrys_control_plane::RuntimeMode::Disabled,
+        docker_bin: std::path::PathBuf::from("docker"),
+        workspace_root: std::env::temp_dir().join("labrys-test-workspaces"),
+        preview_ttl_secs: 3_600,
     }
 }
 

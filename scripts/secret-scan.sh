@@ -12,7 +12,10 @@ ALLOWLIST="$ROOT/.secret-scan-allowlist"
 touch "$ALLOWLIST"
 
 # Patterns: private keys, cloud/token prefixes, password assignments.
-PATTERN='(-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|xox[bap]-|sk-live-|(?i)(password|passwd|secret|api[_-]?key)\s*[:=]\s*["'\'']?[^"'\''[:space:]]{8,})'
+# NOTE: the live-key alternative below is spelled with a character class so
+# this definition block does not match its own pattern; detection of real
+# values is unchanged (the class matches exactly one literal character).
+PATTERN='(-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|xox[bap]-|sk-liv[e]-|(?i)(password|passwd|secret|api[_-]?key)\s*[:=]\s*["'\'']?[^"'\''[:space:]]{8,})'
 
 # Tracked text files only; binary/lock/artifact paths never carry reviewable secrets.
 files="$(git ls-files | grep -avE '^(Cargo\.lock|dashboard/package-lock\.json|\.git/)' || true)"

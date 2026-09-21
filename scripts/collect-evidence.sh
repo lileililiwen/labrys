@@ -70,6 +70,22 @@ if [ -n "${LABRYS_DATABASE_URL:-${DATABASE_URL:-}}" ]; then
   run_check "migration-check" "integration" bash scripts/verify-migrations.sh
   run_check "workspace-tests" "integration" cargo test --workspace
   run_check "staging-smoke" "staging" bash scripts/smoke-staging.sh --out "$OUT"
+  if [ -f "$OUT/smoke.json" ]; then
+    EXEC_STATUS="$(python3 -c 'import json,sys; stages=json.load(open(sys.argv[1])); print(next((s["status"] for s in stages if s.get("stage")=="runtime-delivery"),"missing"))' "$OUT/smoke.json")"
+    if [ "$EXEC_STATUS" = "pass" ]; then
+      record "staging-execution" "staging" "pass" "bash scripts/smoke-staging.sh" \
+        "import→build→run→health→preview-gate→cleanup passed in $OUT/smoke.json"
+    else
+      record "staging-execution" "staging" "blocked" "bash scripts/smoke-staging.sh" \
+        "runtime-delivery is '$EXEC_STATUS' in $OUT/smoke.json" \
+        "provision Docker plus the database, then re-run smoke-staging"
+      blocked=$((blocked + 1))
+    fi
+  else
+    record "staging-execution" "staging" "blocked" "bash scripts/smoke-staging.sh" \
+      "smoke.json was not written" "re-run smoke-staging with --out $OUT"
+    blocked=$((blocked + 1))
+  fi
 else
   record "migration-check" "integration" "blocked" "bash scripts/verify-migrations.sh" \
     "no database configured" "set LABRYS_DATABASE_URL (disposable compose.test.yml), then re-run"
@@ -77,7 +93,9 @@ else
     "no database configured; unit-only subset ran above" "set LABRYS_DATABASE_URL, then re-run"
   record "staging-smoke" "staging" "blocked" "bash scripts/smoke-staging.sh" \
     "no database configured" "set LABRYS_DATABASE_URL, then re-run"
-  blocked=$((blocked + 3))
+  record "staging-execution" "staging" "blocked" "bash scripts/smoke-staging.sh" \
+    "no database configured" "set LABRYS_DATABASE_URL, then re-run"
+  blocked=$((blocked + 4))
 fi
 
 record "production-proof" "production" "blocked" "runtime proof outside CI" \

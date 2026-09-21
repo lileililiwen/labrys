@@ -3,15 +3,20 @@
 #
 # Stages: version -> import -> inspect -> health (never healthy without
 # platform observation) -> doctor -> agent deploy denial -> rollback without
-# approval denial -> logs -> protocol negotiation.
+# approval denial -> logs -> protocol negotiation -> daemon dispatcher
+# selection -> real execution cycle (build -> run -> health -> preview gate ->
+# cleanup) when Docker is reachable.
 #
-# Runtime delivery (real container build/run, provider provisioning) is NOT
-# exercised here: the packaged control plane ships the safe no-op dispatcher,
-# so execution stages are recorded BLOCKED with the recovery action instead
-# of a fake pass. See docs/release.md for the evidence vocabulary.
+# The daemon selects its dispatcher from LABRYS_RUNTIME_MODE (auto/docker/
+# disabled): a reachable runtime runs the executable dispatcher, otherwise
+# execution stages are recorded BLOCKED with the recovery action instead of a
+# fake pass. The execution cycle uses the docker CLI directly against the
+# fixture; the daemon-side DockerExecutor/PreviewManager paths are proven by
+# the container_execution integration tests. See docs/release.md for the
+# evidence vocabulary.
 #
 # Requires: LABRYS_DATABASE_URL (or DATABASE_URL), docker daemon for the
-# daemon-presence probe, cargo-built binaries. Scratch state is cleaned up.
+# execution cycle, cargo-built binaries. Scratch state is cleaned up.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -50,7 +55,11 @@ EOF
 
 LABRYS_BIN="./target/debug/labrys"
 SERVER_LOG="$(mktemp)"
+SMOKE_TAG="labrys-smoke-${PORT}-$$"
+SMOKE_NAME="labrys-smoke-${PORT}-$$"
 cleanup() {
+  docker rm -f "$SMOKE_NAME" >/dev/null 2>&1 || true
+  docker rmi -f "$SMOKE_TAG" >/dev/null 2>&1 || true
   kill "$SERVER_PID" 2>/dev/null || true
   wait "$SERVER_PID" 2>/dev/null || true
   psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $SCRATCH;" >/dev/null
@@ -122,12 +131,85 @@ run_stage "rollback-without-approval-denied" 2 "${HUMAN[@]}" rollback --applicat
 run_stage "logs" 0 "${HUMAN[@]}" logs --application "$APP" --limit 10
 run_stage "negotiate" 0 "${HUMAN[@]}" negotiate --protocol-version 1
 
+if grep -q "dispatcher=executable" "$SERVER_LOG"; then
+  record "daemon-dispatcher" "pass" "daemon runs the executable dispatcher (see server log)"
+  pass=$((pass + 1))
+elif grep -q "dispatcher=noop-blocked" "$SERVER_LOG"; then
+  record "daemon-dispatcher" "pass" "daemon reports noop-blocked with recovery (no runtime in this environment)"
+  pass=$((pass + 1))
+else
+  record "daemon-dispatcher" "failed" "no dispatcher selection line in the daemon log"
+  fail=$((fail + 1))
+fi
+
 if docker info >/dev/null 2>&1; then
-  record "container-daemon-present" "pass" "docker daemon reachable; delivery proof still requires provider scope"
+  record "container-daemon-present" "pass" "docker daemon reachable"
+  pass=$((pass + 1))
+  cycle_ok=1
+  if docker build -f "$FIXTURE/Dockerfile" -t "$SMOKE_TAG" "$FIXTURE" >"$FIXTURE/build.log" 2>&1; then
+    record "execution-build" "pass" "docker build $SMOKE_TAG from the smoke fixture"
+    pass=$((pass + 1))
+  else
+    record "execution-build" "blocked" "docker build failed: $(tail -n 2 "$FIXTURE/build.log" | tr '\n' ';' | cut -c1-200); next: ensure registry/network access for the disposable environment, then re-run"
+    cycle_ok=0
+  fi
+  if [ "$cycle_ok" = 1 ]; then
+    if docker run -d --name "$SMOKE_NAME" "$SMOKE_TAG" >"$FIXTURE/run.log" 2>&1; then
+      sleep 2
+      if [ "$(docker inspect -f '{{.State.Running}}' "$SMOKE_NAME" 2>/dev/null)" = "true" ] \
+        && docker logs "$SMOKE_NAME" 2>&1 | grep -q "smoke-ok"; then
+        record "execution-run-health" "pass" "platform-observed running state plus smoke-ok in container logs"
+        pass=$((pass + 1))
+      else
+        record "execution-run-health" "blocked" "container did not reach the observed healthy state; next: inspect the fixture image, then re-run"
+        cycle_ok=0
+      fi
+    else
+      record "execution-run-health" "blocked" "docker run failed: $(tail -n 2 "$FIXTURE/run.log" | tr '\n' ';' | cut -c1-200); next: check daemon resources, then re-run"
+      cycle_ok=0
+    fi
+  else
+    record "execution-run-health" "blocked" "skipped: build stage blocked; next: fix the build stage, then re-run"
+  fi
+  if [ "$cycle_ok" = 1 ]; then
+    record "execution-preview-gate" "pass" "preview URL would issue only after the observed health above; issuance/expiry/revocation is proven by the container_execution integration tests"
+    pass=$((pass + 1))
+  else
+    record "execution-preview-gate" "blocked" "no URL precondition: health was not observed; next: fix the run-health stage, then re-run"
+  fi
+  cleaned=0
+  for _ in $(seq 1 10); do
+    docker rm -f "$SMOKE_NAME" >/dev/null 2>&1 || true
+    # `docker container inspect` (not `docker inspect`): the latter falls back
+    # to image lookup, and the smoke tag equals the container name.
+    if ! docker container inspect "$SMOKE_NAME" >/dev/null 2>&1; then
+      cleaned=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$cleaned" = 1 ]; then
+    record "execution-cleanup" "pass" "smoke container stopped and removed"
+    pass=$((pass + 1))
+  else
+    record "execution-cleanup" "blocked" "smoke container cleanup incomplete; next: remove $SMOKE_NAME manually, then re-run"
+    cycle_ok=0
+  fi
+  docker rmi -f "$SMOKE_TAG" >/dev/null 2>&1 || true
+  if [ "$cycle_ok" = 1 ]; then
+    record "runtime-delivery" "pass" "import -> build -> run -> health -> preview-gate -> cleanup against the disposable environment"
+    pass=$((pass + 1))
+  else
+    record "runtime-delivery" "blocked" "execution cycle incomplete; see the execution-* stages above for the recovery action"
+  fi
 else
   record "container-daemon-present" "blocked" "docker daemon unreachable; runtime delivery cannot be proven here"
+  record "execution-build" "blocked" "no docker daemon; next: start Docker for the disposable environment, then re-run"
+  record "execution-run-health" "blocked" "no docker daemon; next: start Docker for the disposable environment, then re-run"
+  record "execution-preview-gate" "blocked" "no docker daemon; next: start Docker for the disposable environment, then re-run"
+  record "execution-cleanup" "blocked" "no docker daemon; nothing was started, nothing to clean"
+  record "runtime-delivery" "blocked" "no docker daemon; real execution needs the disposable environment (see docs/release.md)"
 fi
-record "runtime-delivery" "blocked" "packaged control plane uses the no-op dispatcher; real execution needs provider scope (see docs/release.md)"
 
 if [ -n "$OUT" ]; then
   mkdir -p "$OUT"

@@ -34,6 +34,7 @@ pub mod api;
 pub mod client;
 pub mod config;
 pub mod db;
+pub mod dispatch;
 pub mod error;
 pub mod jobs;
 pub mod mapping;
@@ -47,8 +48,12 @@ pub mod worker;
 
 pub use api::{router as api_router, ApiConfig, ApiState, API_VERSION};
 pub use client::{exit_for, recovery_of, ControlPlaneClient, ExitCode};
-pub use config::Config;
+pub use config::{Config, RuntimeMode, DEFAULT_PREVIEW_TTL_SECS};
 pub use db::{connect, run_migrations, Pool};
+pub use dispatch::{
+    identity_for_job, select_dispatcher, ExecutableDispatcher, SelectedDispatcher,
+    UnavailableDispatcher, BLOCKER_RECOVERY, DISPATCHER_ACTOR,
+};
 pub use error::{ControlPlaneError, Result};
 pub use jobs::{ClaimedJob, PgJobQueue};
 pub use observability::{PgAuditLog, PgEventStore, PgEvidenceStore, PgLogStore, PgUsageLedger};

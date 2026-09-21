@@ -1,4 +1,4 @@
-use labrys_control_plane::config::Config;
+use labrys_control_plane::config::{Config, RuntimeMode};
 use labrys_control_plane::ControlPlaneError;
 
 fn config_from(pairs: &[(&str, &str)]) -> Result<Config, ControlPlaneError> {
@@ -77,4 +77,100 @@ fn migrations_can_be_disabled() {
     ])
     .unwrap();
     assert!(!config.run_migrations);
+}
+
+#[test]
+fn execution_fields_carry_bounded_defaults() {
+    let config = config_from(&[("LABRYS_DATABASE_URL", "postgres://u:p@h:5432/db")]).unwrap();
+    assert_eq!(config.runtime_mode, RuntimeMode::Auto);
+    assert_eq!(
+        config.docker_bin,
+        std::path::PathBuf::from("docker"),
+        "{:?}",
+        config.docker_bin
+    );
+    assert!(
+        config
+            .workspace_root
+            .to_string_lossy()
+            .ends_with("labrys-workspaces"),
+        "{:?}",
+        config.workspace_root
+    );
+    assert_eq!(config.preview_ttl_secs, 3_600);
+    config.validate().unwrap();
+}
+
+#[test]
+fn runtime_mode_parses_all_variants_case_insensitively() {
+    for (raw, mode) in [
+        ("auto", RuntimeMode::Auto),
+        ("DOCKER", RuntimeMode::Docker),
+        ("Disabled", RuntimeMode::Disabled),
+    ] {
+        let config = config_from(&[
+            ("LABRYS_DATABASE_URL", "postgres://h/db"),
+            ("LABRYS_RUNTIME_MODE", raw),
+        ])
+        .unwrap();
+        assert_eq!(config.runtime_mode, mode, "{raw}");
+    }
+}
+
+#[test]
+fn unknown_runtime_mode_is_rejected_before_any_connection() {
+    let err = config_from(&[
+        ("LABRYS_DATABASE_URL", "postgres://h/db"),
+        ("LABRYS_RUNTIME_MODE", "kubernetes"),
+    ])
+    .unwrap_err();
+    assert!(matches!(err, ControlPlaneError::Config(_)), "{err:?}");
+    assert!(err.to_string().contains("LABRYS_RUNTIME_MODE"), "{err}");
+}
+
+#[test]
+fn empty_docker_bin_is_rejected() {
+    let err = config_from(&[
+        ("LABRYS_DATABASE_URL", "postgres://h/db"),
+        ("LABRYS_DOCKER_BIN", "   "),
+    ])
+    .unwrap_err();
+    assert!(matches!(err, ControlPlaneError::Config(_)), "{err:?}");
+}
+
+#[test]
+fn empty_workspace_root_is_rejected() {
+    let err = config_from(&[
+        ("LABRYS_DATABASE_URL", "postgres://h/db"),
+        ("LABRYS_WORKSPACE_ROOT", "  "),
+    ])
+    .unwrap_err();
+    assert!(matches!(err, ControlPlaneError::Config(_)), "{err:?}");
+}
+
+#[test]
+fn preview_ttl_is_bounded_to_a_minute_through_a_day() {
+    for raw in ["59", "86401"] {
+        let err = config_from(&[
+            ("LABRYS_DATABASE_URL", "postgres://h/db"),
+            ("LABRYS_PREVIEW_TTL_SECONDS", raw),
+        ])
+        .unwrap_err();
+        assert!(
+            matches!(err, ControlPlaneError::Config(_)),
+            "{raw}: {err:?}"
+        );
+    }
+    for raw in ["60", "3600", "86400"] {
+        let config = config_from(&[
+            ("LABRYS_DATABASE_URL", "postgres://h/db"),
+            ("LABRYS_PREVIEW_TTL_SECONDS", raw),
+        ])
+        .unwrap();
+        assert_eq!(
+            config.preview_ttl_secs,
+            raw.parse::<u64>().unwrap(),
+            "{raw}"
+        );
+    }
 }

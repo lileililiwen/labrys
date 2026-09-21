@@ -1009,6 +1009,7 @@ fn operation_from_row(row: &sqlx::postgres::PgRow) -> Result<ProviderOperationRe
 /// one [`ProviderAdapter`] per provider key, persisting observations through
 /// [`ProviderRuntime`]. Unknown provider keys report a retryable failure with
 /// recovery guidance instead of simulating success.
+#[derive(Clone)]
 pub struct ProviderJobDispatcher {
     runtime: ProviderRuntime,
     adapters: HashMap<String, Arc<dyn ProviderAdapter>>,
@@ -1053,8 +1054,18 @@ impl worker::JobDispatcher for ProviderJobDispatcher {
             )));
         };
         let resource_id: ResourceId = job.target.parse().unwrap_or_else(|_| ResourceId::new());
+        // Carry the claimed job's identity into the provider operation: the
+        // leading target segment names the application (`{app}:deploy:{env}`),
+        // and the trace binds the job id. Unparseable segments fall back to a
+        // fresh id rather than failing the operation.
+        let application_id = job
+            .target
+            .split(':')
+            .next()
+            .and_then(|segment| segment.parse().ok())
+            .unwrap_or_default();
         let operation = ProviderOperation {
-            application_id: labrys_core::ApplicationId::new(),
+            application_id,
             environment_id: None,
             resource_id,
             capability: "database.postgres".to_string(),

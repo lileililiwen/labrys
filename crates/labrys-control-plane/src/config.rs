@@ -1,6 +1,54 @@
 use std::env;
+use std::path::PathBuf;
 
 use crate::error::{ControlPlaneError, Result};
+
+/// How the daemon selects its job dispatcher at startup.
+///
+/// `Auto` probes the container runtime and runs real execution when it is
+/// reachable, falling back to a no-op dispatcher that reports an environment
+/// blocker. `Docker` requires the runtime and fails startup when it is
+/// unreachable. `Disabled` never probes and always reports the blocker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RuntimeMode {
+    #[default]
+    Auto,
+    Docker,
+    Disabled,
+}
+
+impl RuntimeMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Docker => "docker",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    fn parse(raw: &str) -> Result<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "auto" => Ok(Self::Auto),
+            "docker" => Ok(Self::Docker),
+            "disabled" => Ok(Self::Disabled),
+            other => Err(ControlPlaneError::Config(format!(
+                "LABRYS_RUNTIME_MODE must be one of auto, docker, disabled (got '{other}')"
+            ))),
+        }
+    }
+}
+
+impl std::fmt::Display for RuntimeMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Default preview time-to-live: one hour.
+pub const DEFAULT_PREVIEW_TTL_SECS: u64 = 3_600;
+/// Bounds for `LABRYS_PREVIEW_TTL_SECONDS`: one minute to one day.
+pub const MIN_PREVIEW_TTL_SECS: u64 = 60;
+pub const MAX_PREVIEW_TTL_SECS: u64 = 86_400;
 
 /// Runtime configuration for the control-plane process.
 ///
@@ -25,6 +73,14 @@ pub struct Config {
     pub max_concurrency: usize,
     /// Whether to run embedded migrations at startup.
     pub run_migrations: bool,
+    /// How the daemon selects its job dispatcher (auto/docker/disabled).
+    pub runtime_mode: RuntimeMode,
+    /// Container runtime binary the daemon probes and executes through.
+    pub docker_bin: PathBuf,
+    /// Host root under which session worktrees are materialized.
+    pub workspace_root: PathBuf,
+    /// Preview time-to-live in seconds, bounded to one minute through one day.
+    pub preview_ttl_secs: u64,
 }
 
 impl Config {
@@ -48,6 +104,33 @@ impl Config {
             Some(v) => matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"),
             None => true,
         };
+        let runtime_mode = match lookup("LABRYS_RUNTIME_MODE") {
+            Some(v) => RuntimeMode::parse(&v)?,
+            None => RuntimeMode::default(),
+        };
+        let docker_bin = match lookup("LABRYS_DOCKER_BIN") {
+            Some(v) if !v.trim().is_empty() => PathBuf::from(v.trim()),
+            Some(_) => {
+                return Err(ControlPlaneError::Config(
+                    "LABRYS_DOCKER_BIN must not be empty".to_string(),
+                ));
+            }
+            None => PathBuf::from("docker"),
+        };
+        let workspace_root = match lookup("LABRYS_WORKSPACE_ROOT") {
+            Some(v) if !v.trim().is_empty() => PathBuf::from(v.trim()),
+            Some(_) => {
+                return Err(ControlPlaneError::Config(
+                    "LABRYS_WORKSPACE_ROOT must not be empty".to_string(),
+                ));
+            }
+            None => default_workspace_root(),
+        };
+        let preview_ttl_secs = parse_u64(
+            &lookup,
+            "LABRYS_PREVIEW_TTL_SECONDS",
+            DEFAULT_PREVIEW_TTL_SECS,
+        )?;
         let config = Self {
             database_url,
             worker_id,
@@ -56,6 +139,10 @@ impl Config {
             drain_timeout_ms,
             max_concurrency,
             run_migrations,
+            runtime_mode,
+            docker_bin,
+            workspace_root,
+            preview_ttl_secs,
         };
         config.validate()?;
         Ok(config)
@@ -102,8 +189,29 @@ impl Config {
                 "max concurrency must be between 1 and 64".to_string(),
             ));
         }
+        if self.docker_bin.as_os_str().is_empty() {
+            return Err(ControlPlaneError::Config(
+                "docker binary path must not be empty".to_string(),
+            ));
+        }
+        if self.workspace_root.as_os_str().is_empty() {
+            return Err(ControlPlaneError::Config(
+                "workspace root must not be empty".to_string(),
+            ));
+        }
+        if self.preview_ttl_secs < MIN_PREVIEW_TTL_SECS
+            || self.preview_ttl_secs > MAX_PREVIEW_TTL_SECS
+        {
+            return Err(ControlPlaneError::Config(format!(
+                "preview ttl must be between {MIN_PREVIEW_TTL_SECS} and {MAX_PREVIEW_TTL_SECS} seconds"
+            )));
+        }
         Ok(())
     }
+}
+
+fn default_workspace_root() -> PathBuf {
+    std::env::temp_dir().join("labrys-workspaces")
 }
 
 fn default_worker_id() -> String {
