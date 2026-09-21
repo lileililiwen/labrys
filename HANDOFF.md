@@ -54,7 +54,11 @@ ARCHIVED as
 `openspec/changes/archive/2026-09-21-provider-registry-and-domain-adapters`,
 with canonical specs promoted to
 `openspec/specs/provider-adapters/spec.md` (2 requirements) and
-`openspec/specs/registry-and-domain-delivery/spec.md` (2 requirements).
+`openspec/specs/registry-and-domain-delivery/spec.md` (2 requirements), and
+`control-plane-api-and-cli` is implemented, locally verified, and ARCHIVED as
+`openspec/changes/archive/2026-09-21-control-plane-api-and-cli`, with canonical
+specs promoted to `openspec/specs/control-plane-api/spec.md` (2 requirements)
+and `openspec/specs/labrys-cli/spec.md` (2 requirements).
 The `labrys-core` crate now holds a deterministic `Inspector`
 (`crates/labrys-core/src/inspector.rs`): `INSPECTION_ORDER` (dockerfile →
 compose → manifest → framework_convention → configuration → ci → source,
@@ -257,12 +261,19 @@ provisioning across all five provider kinds, accepted-not-ready semantics,
 credential redaction with recovery, approval-denied deletion with zero
 provider calls, digest-mismatch refusal, certificate-failure reporting, and
 durable operation/evidence persistence against an isolated PostgreSQL 16
-instance. The public HTTP API, the CLI binary, and the dashboard remain
-later changes. No CI, deployment, or production evidence exists yet. The
-Phase 5–7 queue (3 active changes) is authored and planning-only; the crate
+instance, plus 12 API/CLI integration tests in
+`crates/labrys-control-plane/tests/api_cli.rs` covering version negotiation,
+auth, import→inspect→doctor with durable replay, agent deploy denial with
+zero jobs, deploy replay with one job, in-progress-never-healthy health,
+rollback boundaries and the database-data warning, log redaction and
+pagination, plugin accept/refuse, CLI black-box doctor and agent rollback,
+and attributed correlated events against an isolated PostgreSQL 16 instance,
+a real HTTP server, and a real `labrys` subprocess. The dashboard remains a
+later change. No CI, deployment, or production evidence exists yet. The
+Phase 5–7 queue (2 active changes) is authored and planning-only; the crate
 now holds durable persistence, a recoverable worker, bounded
-container/preview execution, and provider/registry/domain delivery adapters
-but still no product entry points. The gate declaration is structurally valid and declares
+container/preview execution, provider/registry/domain delivery adapters, and
+an authenticated API/CLI entry point. The gate declaration is structurally valid and declares
 commands for all 8 checks, and a fresh `driftwatchdog gate` run now PASSES all
 8 (the earlier security-adapter block is resolved: `cargo audit` exits 0). The
 only audit exception is a documented, scoped ignore of RUSTSEC-2023-0071
@@ -272,43 +283,30 @@ the binary links only `sqlx-postgres`).
 
 ## Current spec
 
-`current_spec: control-plane-api-and-cli`
+`current_spec: dashboard-and-operator-console`
 
-`provider-registry-and-domain-adapters` is implemented, locally verified, and
-ARCHIVED as
-`openspec/changes/archive/2026-09-21-provider-registry-and-domain-adapters`,
-with canonical specs promoted to `openspec/specs/provider-adapters/spec.md`
-(2 requirements) and `openspec/specs/registry-and-domain-delivery/spec.md`
-(2 requirements). The `labrys-core` crate now holds a deterministic provider
-and delivery model (`crates/labrys-core/src/provider.rs`):
-`ProviderOperation` scope (application, environment, resource, capability,
-provider, idempotency, trace, secret refs only), `ProviderKind`
-(postgres/auth/file/object/generic with supply validation),
-`ProviderAction` with destructive (delete/replace/migrate/adopt) approval
-gating that performs no provider call on denial, `ProviderObservation`
-(acceptance keeps `provisioning`; only platform observation marks ready;
-agent claims only increment an ignored counter), redacted failures with
-recovery guidance, `RegistryArtifact` verified-production push gating plus
-digest-mismatch refusal with recovery, and `DomainDelivery`
-(DNS/TLS/traffic separately observable; traffic only to promoted healthy
-deployments behind propagated DNS and issued TLS; certificate failures report
-the failure, never healthy). The `labrys-control-plane` crate now holds the
-executable adapters (`crates/labrys-control-plane/src/providers.rs`):
-`ProviderAdapter`/`OciRegistry`/`DomainDeliveryAdapter` traits with local
-test doubles (`LocalTestAdapter` ×5 kinds, `LocalTestRegistry`,
-`LocalDomainDelivery`) and failure injection
-(timeout/mismatch/credential-leak/transient), `ProviderRuntime` persisting
-operations (unique idempotency key), digest evidence, domain state, redacted
-events, usage, and hash-chained audit through the worker boundary, plus
-`ProviderJobDispatcher` routing jobs with generic fallback, backed by
-migration `20260921000002_provider_delivery.sql`
-(`provider_operations`, `registry_deliveries`, `domain_deliveries`).
-`control-plane-api-and-cli` is newly authored and remains planning-only. It
-has not been implemented, verified, or archived. It is the next Phase 6
-change in `ROADMAP.md` order and exposes the persisted control plane through
-an authenticated Axum API and the stable `labrys` CLI. The Phase 0–5 queue
-plus `container-execution-and-preview-runtime` remain implemented, locally
-verified, and archived.
+`control-plane-api-and-cli` is implemented, locally verified, and ARCHIVED as
+`openspec/changes/archive/2026-09-21-control-plane-api-and-cli`, with canonical
+specs promoted to `openspec/specs/control-plane-api/spec.md` (2 requirements)
+and `openspec/specs/labrys-cli/spec.md` (2 requirements). The
+`labrys-control-plane` crate now serves an authenticated Axum API
+(`crates/labrys-control-plane/src/api.rs`, 17 routes): bearer-token auth with
+actor/trace/idempotency headers, agent-denied human-only mutations, named
+approval for rollback, durable `idempotency_records` replay (migration
+`20260922000001_api_idempotency.sql`), accepted/job-reference mutation
+envelopes that never report healthy without platform observation, redacted
+paginated reads, attributable correlated events, agent/plugin protocol
+negotiation with 409 on mismatch, and `latest_for_target` job lookup for
+in-progress health. The distributable `labrys` CLI
+(`crates/labrys-control-plane/src/bin/labrys.rs` via clap plus the typed
+`ControlPlaneClient`) covers all 15 stable lifecycle commands with
+`init`/`dev` aliases, pretty JSON envelopes, recovery on stderr, and exit
+0/1/2 semantics. `dashboard-and-operator-console` is newly authored and
+remains planning-only. It has not been implemented, verified, or archived. It
+is the next Phase 6 change in `ROADMAP.md` order and delivers the operator
+web console over the API. The Phase 0–6 queue plus
+`provider-registry-and-domain-adapters` remain implemented, locally verified,
+and archived.
 
 ## Verification evidence
 
