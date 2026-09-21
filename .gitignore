@@ -2,13 +2,16 @@
 /dist/
 /build/
 /node_modules/
+node_modules/
 /.next/
+.next/
 /coverage/
 /.env
 /.env.*
 !.env.example
 *.log
 *.tmp
+*.tsbuildinfo
 *.swp
 .DS_Store
 .idea/
